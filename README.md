@@ -37,4 +37,4 @@ pip install tensorboardX
 # Acknowledgements
 ![ALOHA Logo](/var/aloha.png)
 
-NEMO is an outcome of the European Commission Horizon 2020 ALOHA Project, funded under the EU's Horizon 2020 Research and Innovation Programme, grant agreement no. 780788.
+NEMO is an outcome of the European Commission [Horizon 2020 ALOHA Project](https://www.aloha-h2020.eu/), funded under the EU's Horizon 2020 Research and Innovation Programme, grant agreement no. 780788.
