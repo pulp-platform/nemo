@@ -1,5 +1,5 @@
 # NEMO (NEural Minimizer for pytOrch)
-**NEMO (NEural Minimizer for pytOrch)** is a small library for minimization of Deep Neural Networks developed in PyTorch, aimed at their deployment on ultra-low power, highly memory constrained platforms.
+**NEMO (NEural Minimizer for pytOrch)** is a small library for minimization of Deep Neural Networks developed in PyTorch, aimed at their deployment on ultra-low power, highly memory constrained platforms, in particular (but not exclusively) PULP-based microcontrollers.
 NEMO features include:
  - deployment-related transformations such as BatchNorm folding, bias removal, weight equalization 
  - collection of statistics on activations and weights
