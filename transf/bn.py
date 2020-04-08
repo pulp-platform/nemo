@@ -98,24 +98,7 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0.):
     """
 
     if not bn_dict:
-        # check all supernodes for BN and CONV layers
-        for k,sn in self.graph.get_supernodes().items():
-            bn = []
-            lin = []
-            for n in sn:
-                if isinstance(n[1], torch.nn.BatchNorm2d) or \
-                   isinstance(n[1], torch.nn.BatchNorm1d) or \
-                   isinstance(n[1], PACT_QuantizedBatchNorm2d):
-                    bn.append(n[0])
-                if isinstance(n[1], PACT_Conv2d) or \
-                   isinstance(n[1], PACT_Conv1d) or \
-                   isinstance(n[1], PACT_Linear):
-                    lin.append(n[0])
-            if len(lin) > 1 or len(bn) > 1:
-                print("[Error] Supernode analysis identified multiple BN or LIN layers when tring to fold! Aborting folding...")
-                print(lin, bn)
-                return
-            bn_dict[lin[0]] = bn[0]
+        bn_dict = get_bn_dict_from_supernodes(self)
 
     module_dict = {}
     for n,m in self.named_modules():

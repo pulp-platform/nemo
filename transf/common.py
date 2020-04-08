@@ -30,7 +30,7 @@ import math
 import torchvision.models
 import re
 
-__all__ = [ "reshape_before", "reshape_after", "weight_range", "onnx_name_2_pytorch_name" ]
+__all__ = [ "reshape_before", "reshape_after", "weight_range", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes" ]
 
 def reshape_before(m, s):
     if   m.__class__.__name__ == "PACT_Conv2d":
@@ -81,3 +81,29 @@ def onnx_name_2_pytorch_name(name):
     name_parts = re.findall('\[.*?\]', name)
     name_parts = [part[1:-1] for part in name_parts]
     return '.'.join(name_parts)
+ 
+def get_bn_dict_from_supernodes(net):
+    bn_dict = {}
+    # check all supernodes for BN and CONV layers
+    for k,sn in net.graph.get_supernodes().items():
+        bn = []
+        lin = []
+        for n in sn:
+            if isinstance(n[1], torch.nn.BatchNorm2d) or \
+               isinstance(n[1], torch.nn.BatchNorm1d) or \
+               isinstance(n[1], PACT_QuantizedBatchNorm2d):
+                bn.append(n[0])
+            if isinstance(n[1], PACT_Conv2d) or \
+               isinstance(n[1], PACT_Conv1d) or \
+               isinstance(n[1], PACT_Linear):
+                lin.append(n[0])
+        if len(lin) > 1 or len(bn) > 1:
+            print("[Error] Supernode analysis identified multiple BN or LIN layers when tring to fold! Aborting folding...")
+            print(lin, bn)
+            return
+        try:
+            bn_dict[lin[0]] = bn[0]
+        except IndexError:
+            pass
+    return bn_dict
+
