@@ -20,7 +20,7 @@
 # coding=utf-8
 import math
 import torch
-from torch.nn.modules.utils import _pair
+from torch.nn.modules.utils import _single,_pair
 from nemo.precision import Precision
 import numpy as np
 
@@ -1230,7 +1230,7 @@ class PACT_Conv1d(torch.nn.Conv1d):
             W_quant = self.weight
         if self.padding_mode == 'circular':
             expanded_padding = ((self.padding[0] + 1) // 2, self.padding[0] // 2)
-            return torch.nn.functional.conv1d(F.pad(input, expanded_padding, mode='circular'),
+            return torch.nn.functional.conv1d(torch.nn.functional.pad(input, expanded_padding, mode='circular'),
                             W_quant, self.bias, self.stride,
                             _single(0), self.dilation, self.groups)
         return torch.nn.functional.conv1d(input, W_quant, self.bias, self.stride,
