@@ -38,4 +38,4 @@ jobs:
     - name: Test
       run: |
         # pip install pytest
-        cd tests; wget https://raw.githubusercontent.com/FrancescoConti/nemo_examples_helper/master/mnist_cnn_fp.pt; PYTHONPATH=`pwd`/../.. python mnist_test.py
+        cd tests; wget https://raw.githubusercontent.com/FrancescoConti/nemo_examples_helper/master/mnist_cnn_fp.pt; PYTHONPATH=`pwd`/.. python mnist_test.py
