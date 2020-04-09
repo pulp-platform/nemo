@@ -9,7 +9,7 @@ NEMO features include:
  - bit-accurate deployment model
  - export to ONNX
 
-NEMO operates on three different "levels" of quantization-aware DNN representations, all built upon `torch.nn.Module`s and `torch.autograd.Function`s:
+NEMO operates on three different "levels" of quantization-aware DNN representations, all built upon `torch.nn.Module` and `torch.autograd.Function`:
  - fake-quantized *FQ*: replaces regular activations (e.g., ReLU) with quantization-aware ones (PACT) and dynamically quantized weights (with linear PACT-like quantization), maintaining full trainability (similar to the native PyTorch support, but not based on it).
  - quantized-deployable *QD*: replaces all function with deployment-equivalent versions, trading off trainability for a more accurate representation of numerical behavior on real hardware.
  - integer-deployable *ID*: replaces all activation and weight tensors used along the network with integer-based ones. It aims at bit-accurate representation of actual hardware behavior.
@@ -24,15 +24,7 @@ NEMO is organized as a Python library that can be applied with relatively small 
 NEMO is released under Apache 2.0, see the LICENSE file in the root of this repository for details.
 
 # Requirements
-The NEMO library (NEural Minimizer for tOrch) has only minimal dependencies on PyTorch 1.3 and TensorboardX. To set up a minimum working environment in Anaconda/Miniconda, run
-
-```
-conda create -n nemo python=3
-source activate nemo
-conda install -y pytorch torchvision -c pytorch
-conda install -y scipy
-pip install tensorboardX
-```
+The NEMO library (NEural Minimizer for tOrch) currently supports PyTorch >= 1.3.
 
 # Acknowledgements
 ![ALOHA Logo](/var/aloha.png)
