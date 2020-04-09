@@ -390,7 +390,7 @@ class RelaxationEngine():
                             lr = p['lr']
                         logging.info("[Relax @%d]\t Scaled LR to %.3e" % (epoch-1, lr))
                 except KeyError:
-                    pa
+                    pass
                 if self.validate_on_train_fn is not None:
                     loss = self.validate_on_train_fn(epoch)
                     logging.info("[Relax @%d]\t validate_on_train loss=%.3e" % (epoch-1, loss.item()))

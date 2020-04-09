@@ -73,7 +73,7 @@ def save_checkpoint(net, optimizer, epoch, acc=0.0, checkpoint_name='net_', chec
         os.mkdir('checkpoint')
     torch.save(state, './checkpoint/%s.pth' % (checkpoint_name))
 
-def export_onnx(file_name, net, net_inner, input_shape, round_params=True, perm=None, redefine_names=False, batch_size=1):
+def export_onnx(file_name, net, net_inner, input_shape, round_params=True, perm=None, redefine_names=False, batch_size=1, verbose=False):
     if perm is None:
         perm = lambda x : x
     pattern = re.compile('[\W_]+')
@@ -87,9 +87,9 @@ def export_onnx(file_name, net, net_inner, input_shape, round_params=True, perm=
     if redefine_names:
         input_names  = [ 'input' ] + [ pattern.sub('_', n) for n,_ in net_inner.named_parameters() ]
         output_names = [ 'output' ]
-        torch.onnx.export(net_inner, dummy_input, file_name, verbose=True, do_constant_folding=True, input_names=input_names, output_names=output_names, export_params=True)
+        torch.onnx.export(net_inner, dummy_input, file_name, verbose=verbose, do_constant_folding=True, input_names=input_names, output_names=output_names, export_params=True)
     else:
-        torch.onnx.export(net_inner, dummy_input, file_name, verbose=True, do_constant_folding=True, export_params=True)
+        torch.onnx.export(net_inner, dummy_input, file_name, verbose=verbose, do_constant_folding=True, export_params=True)
 
 PRECISION_RULE_KEYS_REQUIRED = {
     "for_epochs": 1,
