@@ -17,14 +17,22 @@ All the quantized representations support mixed-precision weights (signed and as
 
 NEMO is organized as a Python library that can be applied with relatively small changes to an existing PyTorch based script or training framework.
 
+# Installation and requirements
+The NEMO library currently supports PyTorch >= 1.3 and runs on Python >= 3.5.
+To install it from PyPI, just run
+```
+pip install pytorch-nemo
+```
+Then, you can import it in your script using
+```
+import nemo
+```
+
 # Example
 - MNIST post-training quantization: https://colab.research.google.com/drive/1AmcITfN2ELQe07WKQ9szaxq-WSu4hdQb
 
 # License
 NEMO is released under Apache 2.0, see the LICENSE file in the root of this repository for details.
-
-# Requirements
-The NEMO library (NEural Minimizer for tOrch) currently supports PyTorch >= 1.3.
 
 # Acknowledgements
 ![ALOHA Logo](/var/aloha.png)
