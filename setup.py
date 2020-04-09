@@ -4,8 +4,8 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="NEMO",
-    version="0.1",
+    name="pytorch-nemo",
+    version="0.0.1",
     author="Francesco Conti",
     author_email="f.conti@unibo.it",
     description="NEural Minimizer for pytOrch",
