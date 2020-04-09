@@ -19,4 +19,11 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.5',
+    install_requires=[
+        "torch>=1.3.0",
+        "torchvision>=0.4.1",
+        "numpy",
+        "tqdm",
+        "packaging"
+    ]
 )
