@@ -125,7 +125,7 @@ class DeployGraph(object):
     def __init__(self, module, dummy_input):
         if version.parse(torch.__version__) < version.parse('1.4.0'):
             trace, _, _ = torch.jit.get_trace_graph(module, dummy_input, _force_outplace=True, _return_inputs_states=True)
-            torch.onnx.utils._optimize_trace(trace, torch.onnx.OperatorExportTypes.ONNX)
+            torch.onnx._optimize_trace(trace, torch.onnx.OperatorExportTypes.ONNX)
             graph = trace.graph()
         else:
             with scope_name_workaround():
