@@ -364,7 +364,7 @@ class PACT_Act(torch.nn.Module):
         if use_max:
             self.alpha.data[0] = self.max.item()
         else:
-            self.alpha.data[0] = nb_std * torch.sqrt(self.var).item()
+            self.alpha.data[0] = nb_std * torch.sqrt(self.running_var).item()
 
     def get_statistics(self):
         r"""Returns the statistics collected up to now.
