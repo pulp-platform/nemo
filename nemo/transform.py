@@ -41,7 +41,7 @@ from nemo.transf.pruning import *
 from nemo.transf.statistics import *
 from nemo.transf.utils import *
 
-def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None):
+def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=False):
     r"""Takes a PyTorch module and makes it quantization-aware with PACT, recursively.
 
     The function follows recursively the data structures containing PyTorch layers (typically as hierarchical lists, e.g.
@@ -71,13 +71,16 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None):
     :type  module: `torch.nn.Module`
     
     :param W_bits: target precision for weights.
-    :type  module: int
+    :type  W_bits: float
     
     :param x_bits: target precision for activations.
-    :type  module: int
+    :type  x_bits: float
     
     :param dummy_input: dummy input tensor (default None). Used to derive an adjacency map by tracing
-    :type  module: int
+    :type  dummy_input: `torch.Tensor`
+
+    :param remove_dropout: if True, removes dropout layers before graph construction.
+    :type  remove_dropout: bool
     
     :return: The quantization-aware module.
     :rtype:  same as `module`
@@ -85,6 +88,8 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None):
     """
     # if given a dummy input, get an adjacency map of the module and other useful things
     module.eval()
+    if remove_dropout:
+        module = nemo.transform.dropout_to_identity(module)
     if dummy_input is not None:
         module.graph = DeployGraph(module, dummy_input=dummy_input)
     else:
@@ -148,6 +153,15 @@ def _hier_bn_to_identity(module):
     else:
         for n,m in module.named_children():
             module._modules[n] = _hier_bn_to_identity(m)
+        return module
+
+def _hier_dropout_to_identity(module):
+    if module.__class__.__name__ == 'Dropout':
+        module = PACT_Identity()
+        return module
+    else:
+        for n,m in module.named_children():
+            module._modules[n] = _hier_dropout_to_identity(m)
         return module
 
 def _hier_bn_quantizer(module, **kwargs):
@@ -371,6 +385,13 @@ def thresholdize_pact(module, act_dict):
 
 def bn_to_identity(module):
     module = _hier_bn_to_identity(module)
+    if hasattr(module, 'graph'):
+        if module.graph is not None:
+            module.graph.rebuild_module_dict()
+    return module
+
+def dropout_to_identity(module):
+    module = _hier_dropout_to_identity(module)
     if hasattr(module, 'graph'):
         if module.graph is not None:
             module.graph.rebuild_module_dict()
