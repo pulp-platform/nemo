@@ -151,13 +151,14 @@ def _hier_bn_to_identity(module):
         return module
 
 def _hier_bn_quantizer(module, **kwargs):
-    if module.__class__.__name__ == 'BatchNorm2d':# or \
-    #    module.__class__.__name__ == 'BatchNorm1d':
+    if module.__class__.__name__ == 'BatchNorm2d' or \
+        module.__class__.__name__ == 'BatchNorm1d':
         gamma = module.weight.data[:].clone().detach()
         beta = module.bias.data[:].clone().detach()
         sigma = torch.sqrt(module.running_var.data[:] + module.eps).clone().detach()
         mu = module.running_mean.data[:].clone().detach()
-        module = PACT_QuantizedBatchNorm2d(kappa=gamma/sigma, lamda=beta-gamma/sigma*mu, **kwargs)
+        dimensions = 1 if module.__class__.__name__ == 'BatchNorm1d' else 2
+        module = PACT_QuantizedBatchNorm2d(kappa=gamma/sigma, lamda=beta-gamma/sigma*mu, dimensions=dimensions, **kwargs)
         return module
     else:
         for n,m in module.named_children():
