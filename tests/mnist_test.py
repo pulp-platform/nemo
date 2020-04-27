@@ -75,7 +75,7 @@ class Metric(object):
     def avg(self):
         return self.sum / self.n
 
-def train(model, device, train_loader, optimizer, epoch, verbose=True):
+def train(model, device, train_loader, optimizer, epoch, verbose=False):
     model.train()
     train_loss = Metric('train_loss')
     with tqdm(total=len(train_loader),
@@ -93,7 +93,7 @@ def train(model, device, train_loader, optimizer, epoch, verbose=True):
             t.update(1)
     return train_loss.avg.item()
 
-def test(model, device, test_loader, integer=False, verbose=True):
+def test(model, device, test_loader, integer=False, verbose=False):
     model.eval()
     test_loss = 0
     correct = 0
@@ -140,8 +140,8 @@ model = ExampleNet().to(device)
 state_dict = torch.load("mnist_cnn_fp.pt", map_location='cpu')
 model.load_state_dict(state_dict, strict=True)
 acc = test(model, device, test_loader)
-assert acc >= 99.0
 print("\nFullPrecision accuracy: %.02f%%" % acc)
+assert acc >= 99.0
 
 """Now, it's time to try out some post-training quantization. We will do so by switching to the ***FakeQuantized*** stage. This representation is very similar to *FullPrecision*, as it still uses real-valued tensors for weights and activations. However, activation functions such as ReLU become quantization functions, imposing that the output is representable in a certain number of steps. Mathematically,
 $$
@@ -182,8 +182,8 @@ precision = {
 }
 model.change_precision(bits=1, min_prec_dict=precision)
 acc = test(model, device, test_loader)
-assert acc >= 80.0
 print("\nFakeQuantized @ 16b accuracy (first try): %.02f%%" % acc)
+assert acc >= 80.0
 
 """The first try looks... not so good. 82% is actually pretty bad for MNIST! What happened? Remember that while clipping parameters for weights can be set statically, this is not true for activations: so the missing piece is the characterization of activation clipping ($\alpha$ parameter), which is currently set to a default value.
 
@@ -195,8 +195,8 @@ _ = test(model, device, test_loader)
 model.unset_statistics_act()
 model.reset_alpha_act()
 acc = test(model, device, test_loader)
-assert acc >= 99.0
 print("\nFakeQuantized @ 16b accuracy (calibrated): %.02f%%" % acc)
+assert acc >= 99.0
 
 """Now the accuracy is substantially the same as the initial one! This is what we expect to see using a very conservative quantization scheme with 16 bits. Due to the way that NEMO implements the *FakeQuantized* stage, it is very easy to explore what happens by imposing a stricter or mixed precision quantization scheme. The number of bits we can use is very free: we can even set it to "fractionary" values if we want, which corresponds to intermediate $\varepsilon$ *quantum* sizes with respect to the nearest integers. For example, let's force `conv1`, `conv2` and `fc1` to be 7 bits, `fc2` to use only 3 bits for its parameters, and all activations to be 8-bit.
 
@@ -228,8 +228,8 @@ precision = {
 }
 model.change_precision(bits=1, min_prec_dict=precision)
 acc = test(model, device, test_loader)
-assert acc >= 99.0
 print("\nFakeQuantized @ mixed-precision accuracy: %.02f%%" % acc)
+assert acc >= 99.0
 nemo.utils.save_checkpoint(model, None, 0, checkpoint_name='mnist_fq_mixed')
 
 """Since MNIST is very easy, there is only a very small accuracy reduction despite the aggressive reduction at the end of the network. Now, let us progress towards a possible deployment. One of the possible steps is the so-called *folding* of batch-normalization layers. With this operation, the normalization performed by batch-norm layers is absorbed within the parameters of the convolutional layers. To perform it, we first do the folding itself, then we reset the clipping parameters of weights (because the weights change their value!)."""
@@ -237,8 +237,8 @@ nemo.utils.save_checkpoint(model, None, 0, checkpoint_name='mnist_fq_mixed')
 model.fold_bn()
 model.reset_alpha_weights()
 acc = test(model, device, test_loader)
-assert acc >= 98.8
 print("\nFakeQuantized @ mixed-precision (folded) accuracy: %.02f%%" % acc)
+assert acc >= 98.8
 
 """Notice a small reduction in accuracy: as you might remember, the batch-norm layers were not quantized before folding; folding absorbs them inside the quantized parameters. Therefore a small reduction is expected! There are also a few techniques that can be used to recover accuracy, such as the weight equaliztion for Data Free Quantization proposed by Nagel et al. (https://arxiv.org/abs/1906.04721) . Here we try it on our network, which requires also a new calibration pass."""
 
@@ -248,8 +248,8 @@ _ = test(model, device, test_loader)
 model.unset_statistics_act()
 model.reset_alpha_act()
 acc = test(model, device, test_loader)
-assert acc >= 99.0
 print("\nFakeQuantized @ mixed-precision (folded+equalized) accuracy: %.02f%%" % acc)
+assert acc >= 99.0
 
 """Now we go back one step, reloading the state from the saved checkpoint (before folding) to show the "standard" deployment strategy that we use, based on Integer Batch-Norm (Rusci et al., https://arxiv.org/abs/1905.13082). 
 This is organized in two steps: first, we replace all `BatchNorm2d` in the network into a special quantized form, which is equivalent to freezing their parameters and transforms them, essentially, in channel-wise affine transforms. Then, we harden weights in their current quantum representation. Finally, we use the `set_deployment` method to bring the network to the ***QuantizedDeployable*** stage.
@@ -269,8 +269,8 @@ model.harden_weights()
 model.set_deployment(eps_in=1./255)
 print(model)
 acc = test(model, device, test_loader)
-assert acc >= 99.0
 print("\nQuantizedDeployable @ mixed-precision accuracy: %.02f%%" % acc)
+assert acc >= 99.0
 
 """The *QuantizedDeployable* network is accurate only in the sense that the operations keep all quantization assumptions. It is not, however, bit-accurate with respect to deployment on an integer-only hardware platform. To get that level of accuracy, we have to transform the network to the last stage: ***IntegerDeployable***.
 
@@ -280,5 +280,5 @@ At this stage, the network can essentially "forget" about the quantum and only w
 model = nemo.transform.integerize_pact(model, eps_in=1.0/255)
 print(model)
 acc = test(model, device, test_loader, integer=True)
-assert acc >= 99.0
 print("\nIntegerDeployable @ mixed-precision accuracy: %.02f%%" % acc)
+assert acc >= 99.0
