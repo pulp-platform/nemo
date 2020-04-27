@@ -30,6 +30,19 @@ import math
 import torchvision.models
 import re
 from nemo.transf.common import *
+from contextlib import contextmanager
+
+@contextmanager
+def _statistics_act_pact(self):
+    r"""Used with `with net.statistics_act():`, calls `net.set_statistics_act()` on enter
+    and `net.unset_statistics_act()` on exit.    
+
+    """
+    self.set_statistics_act()
+    try:
+        yield
+    finally:
+        self.unset_statistics_act()
 
 def _set_statistics_act_pact(self):
     r"""Sets :py:class:`nemo.quant.PACT_Act` layers to collect statistics and work like ReLU's.
