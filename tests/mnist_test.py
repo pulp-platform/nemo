@@ -242,7 +242,7 @@ assert acc >= 98.8
 
 """Notice a small reduction in accuracy: as you might remember, the batch-norm layers were not quantized before folding; folding absorbs them inside the quantized parameters. Therefore a small reduction is expected! There are also a few techniques that can be used to recover accuracy, such as the weight equaliztion for Data Free Quantization proposed by Nagel et al. (https://arxiv.org/abs/1906.04721) . Here we try it on our network, which requires also a new calibration pass."""
 
-model.equalize_weights_dfq({'conv1':'conv2'})
+model.equalize_weights_dfq({'conv1':'conv2'}, reset_alpha=False)
 model.set_statistics_act()
 _ = test(model, device, test_loader)
 model.unset_statistics_act()
