@@ -43,16 +43,22 @@ def _add_input_bias_pact(self, lin_dict):
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
-            m.__class__.__name__ == "PACT_Linear"):
+            m.__class__.__name__ == "PACT_Linear" or \
+            m.__class__.__name__ == "ConstantPad2d"):
             module_dict[n] = m
     # print(lin_dict)
     for n in lin_dict.keys():
         m = module_dict[n]
-        try:
-            m.bias.data[:] = m.bias.data[:] - lin_dict[n] * m.weight.data[:].sum(3).sum(2).sum(1)
-        except AttributeError:
-            m.bias = torch.nn.Parameter(-lin_dict[n] * m.weight.data[:].sum(3).sum(2).sum(1))
-        m.padding_value = lin_dict[n]
+        if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_Conv1d" or \
+            m.__class__.__name__ == "PACT_Linear"):
+            try:
+                m.bias.data[:] = m.bias.data[:] - lin_dict[n] * m.weight.data[:].sum(3).sum(2).sum(1)
+            except AttributeError:
+                m.bias = torch.nn.Parameter(-lin_dict[n] * m.weight.data[:].sum(3).sum(2).sum(1))
+            m.padding_value = lin_dict[n]
+        else:
+            m.value = lin_dict[n]
     self.input_bias_dict = lin_dict
 
 def _remove_input_bias_pact(self):
