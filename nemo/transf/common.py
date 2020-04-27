@@ -38,7 +38,7 @@ def reshape_before(m, s):
     elif m.__class__.__name__ == "PACT_Conv1d":
         return s.reshape((s.shape[0],1,1))
     elif m.__class__.__name__ == "PACT_Linear":
-        return s.reshape((1,s.shape[0]))
+        return s.reshape((s.shape[0],1))
     else:
         return s
 
@@ -52,7 +52,7 @@ def reshape_after(m, s):
     elif m.__class__.__name__ == "PACT_Conv1d":
         return s.reshape((1,s.shape[0],1))
     elif m.__class__.__name__ == "PACT_Linear":
-        return s.reshape((s.shape[0],1))
+        return s.reshape((1,s.shape[0]))
     else:
         return s
 
