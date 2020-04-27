@@ -17,6 +17,7 @@
 # limitations under the License.
 
 import torch
+import nemo
 from nemo.precision import Precision
 from nemo.quant.pact import *
 from nemo.graph import DeployGraph
@@ -151,3 +152,21 @@ def _reset_alpha_weights_pact(self, **kwargs):
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             m.reset_alpha_weights(**kwargs)
+
+def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, **kwargs):
+    self.harden_weights()
+    if add_input_bias_dict:
+        self.add_input_bias(add_input_bias_dict)
+    if remove_bias_dict:
+        self.remove_bias(remove_bias_dict)
+    nemo.transform.bn_quantizer(self, **kwargs)
+    self.set_deployment(eps_in=eps_in)
+
+def _id_stage(self, eps_in=None, **kwargs):
+    if self.stage == 'fq':
+        self.qd_stage(eps_in=eps_in, **kwargs)
+    self.stage = 'id'
+    if eps_in is None:
+        eps_in = self.eps_in
+    nemo.transform.integerize_pact(self, eps_in=eps_in)
+

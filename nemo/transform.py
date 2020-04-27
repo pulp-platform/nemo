@@ -41,7 +41,7 @@ from nemo.transf.pruning import *
 from nemo.transf.statistics import *
 from nemo.transf.utils import *
 
-def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None):
+def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=False):
     r"""Takes a PyTorch module and makes it quantization-aware with PACT, recursively.
 
     The function follows recursively the data structures containing PyTorch layers (typically as hierarchical lists, e.g.
@@ -71,13 +71,16 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None):
     :type  module: `torch.nn.Module`
     
     :param W_bits: target precision for weights.
-    :type  module: int
+    :type  W_bits: float
     
     :param x_bits: target precision for activations.
-    :type  module: int
+    :type  x_bits: float
     
     :param dummy_input: dummy input tensor (default None). Used to derive an adjacency map by tracing
-    :type  module: int
+    :type  dummy_input: `torch.Tensor`
+
+    :param remove_dropout: if True, removes dropout layers before graph construction.
+    :type  remove_dropout: bool
     
     :return: The quantization-aware module.
     :rtype:  same as `module`
@@ -85,10 +88,13 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None):
     """
     # if given a dummy input, get an adjacency map of the module and other useful things
     module.eval()
+    if remove_dropout:
+        module = nemo.transform.dropout_to_identity(module)
     if dummy_input is not None:
         module.graph = DeployGraph(module, dummy_input=dummy_input)
     else:
         module.graph = None
+    module.stage = 'fq'
     module = _hier_quantizer_pact(module, module.graph)
     if hasattr(module, 'graph'):
         if module.graph is not None:
@@ -116,9 +122,12 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None):
     module.get_nonclip_parameters      = types.MethodType(nemo.transf.utils._get_nonclip_parameters_pact, module)
     module.set_train_loop              = types.MethodType(nemo.transf.utils._set_train_loop_pact, module)
     module.unset_train_loop            = types.MethodType(nemo.transf.utils._unset_train_loop_pact, module)
+    module.qd_stage                    = types.MethodType(nemo.transf.utils._qd_stage, module)
+    module.id_stage                    = types.MethodType(nemo.transf.utils._id_stage, module)
     module.prune_weights               = types.MethodType(nemo.transf.pruning._prune_weights_pact, module)
     module.equalize_weights_dfq        = types.MethodType(nemo.transf.equalize._equalize_weights_dfq_pact, module)
     module.equalize_weights_unfolding  = types.MethodType(nemo.transf.equalize._equalize_weights_unfolding_pact, module)
+    module.statistics_act              = types.MethodType(nemo.transf.statistics._statistics_act_pact, module)
     module.set_statistics_act          = types.MethodType(nemo.transf.statistics._set_statistics_act_pact, module)
     module.get_statistics_act          = types.MethodType(nemo.transf.statistics._get_statistics_act_pact, module)
     module.unset_statistics_act        = types.MethodType(nemo.transf.statistics._unset_statistics_act_pact, module)
@@ -146,18 +155,28 @@ def _hier_bn_to_identity(module):
             module._modules[n] = _hier_bn_to_identity(m)
         return module
 
-def _hier_bn_quantizer(module):
-    if module.__class__.__name__ == 'BatchNorm2d':# or \
-    #    module.__class__.__name__ == 'BatchNorm1d':
+def _hier_dropout_to_identity(module):
+    if module.__class__.__name__ == 'Dropout':
+        module = PACT_Identity()
+        return module
+    else:
+        for n,m in module.named_children():
+            module._modules[n] = _hier_dropout_to_identity(m)
+        return module
+
+def _hier_bn_quantizer(module, **kwargs):
+    if module.__class__.__name__ == 'BatchNorm2d' or \
+        module.__class__.__name__ == 'BatchNorm1d':
         gamma = module.weight.data[:].clone().detach()
         beta = module.bias.data[:].clone().detach()
         sigma = torch.sqrt(module.running_var.data[:] + module.eps).clone().detach()
         mu = module.running_mean.data[:].clone().detach()
-        module = PACT_QuantizedBatchNorm2d(kappa=gamma/sigma, lamda=beta-gamma/sigma*mu)
+        dimensions = 1 if module.__class__.__name__ == 'BatchNorm1d' else 2
+        module = PACT_QuantizedBatchNorm2d(kappa=gamma/sigma, lamda=beta-gamma/sigma*mu, dimensions=dimensions, **kwargs)
         return module
     else:
         for n,m in module.named_children():
-            module._modules[n] = _hier_bn_quantizer(m)
+            module._modules[n] = _hier_bn_quantizer(m, **kwargs)
         return module
 
 def _hier_bn_dequantizer(module):
@@ -165,7 +184,7 @@ def _hier_bn_dequantizer(module):
     #    module.__class__.__name__ == 'BatchNorm1d':
         gamma = module.kappa.data[:].clone().detach().flatten()
         beta = module.lamda.data[:].clone().detach().flatten()
-        module = torch.nn.BatchNorm2d(gamma=gamma, beta=beta)
+        module = torch.nn.BatchNorm2d(weight=gamma, bias=beta)
         return module
     else:
         for n,m in module.named_children():
@@ -343,10 +362,10 @@ def integerize_pact(module, eps_in, **kwargs):
     net.set_eps_in(eps_in)
     net = _hier_integerizer(net, **kwargs)
     net.graph.rebuild_module_dict()
-    if hasattr(module, 'model'):
-        module.model = net
-    else:
-        module = net
+    # if hasattr(module, 'model'):
+    #     module.model = net
+    # else:
+    #     module = net
     return module
 
 def dequantize_pact(module):
@@ -371,8 +390,15 @@ def bn_to_identity(module):
             module.graph.rebuild_module_dict()
     return module
 
-def bn_quantizer(module):
-    module = _hier_bn_quantizer(module)
+def dropout_to_identity(module):
+    module = _hier_dropout_to_identity(module)
+    if hasattr(module, 'graph'):
+        if module.graph is not None:
+            module.graph.rebuild_module_dict()
+    return module
+
+def bn_quantizer(module, **kwargs):
+    module = _hier_bn_quantizer(module, **kwargs)
     if hasattr(module, 'graph'):
         if module.graph is not None:
             module.graph.rebuild_module_dict()

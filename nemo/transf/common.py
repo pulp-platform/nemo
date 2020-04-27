@@ -30,7 +30,7 @@ import math
 import torchvision.models
 import re
 
-__all__ = [ "reshape_before", "reshape_after", "weight_range", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes" ]
+__all__ = [ "reshape_before", "reshape_after", "weight_range", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes", "get_equalize_dict_from_supernodes" ]
 
 def reshape_before(m, s):
     if   m.__class__.__name__ == "PACT_Conv2d":
@@ -38,7 +38,7 @@ def reshape_before(m, s):
     elif m.__class__.__name__ == "PACT_Conv1d":
         return s.reshape((s.shape[0],1,1))
     elif m.__class__.__name__ == "PACT_Linear":
-        return s.reshape((1,s.shape[0]))
+        return s.reshape((s.shape[0],1))
     else:
         return s
 
@@ -52,7 +52,7 @@ def reshape_after(m, s):
     elif m.__class__.__name__ == "PACT_Conv1d":
         return s.reshape((1,s.shape[0],1))
     elif m.__class__.__name__ == "PACT_Linear":
-        return s.reshape((s.shape[0],1))
+        return s.reshape((1,s.shape[0]))
     else:
         return s
 
@@ -82,12 +82,36 @@ def onnx_name_2_pytorch_name(name):
     name_parts = [part[1:-1] for part in name_parts]
     return '.'.join(name_parts)
  
+def get_equalize_dict_from_supernodes(net):
+    eq_dict = {}
+    act_dict = {}
+    # check all supernodes for ACT and CONV layers
+    lin = {}
+    act = {}
+    prev = {}
+    for k,ssn in net.graph.get_supernodes().items():
+        for n in ssn['supernode']:
+             if isinstance(n[1], PACT_Conv2d) or \
+                isinstance(n[1], PACT_Conv1d) or \
+                isinstance(n[1], PACT_Linear):
+                 lin[k]  = n[0]
+        prev[k] = ssn['previous']
+        act[k]  = k
+    for k in prev.keys():
+        p = lin.get(prev[k])
+        if p is not None:
+            eq_dict [lin[prev[k]]] = lin[k]
+            act_dict[lin[prev[k]]] = act[prev[k]]
+    return eq_dict, act_dict
+
 def get_bn_dict_from_supernodes(net):
     bn_dict = {}
     # check all supernodes for BN and CONV layers
-    for k,sn in net.graph.get_supernodes().items():
+    for k,ssn in net.graph.get_supernodes().items():
         bn = []
         lin = []
+        sn = ssn['supernode']
+        prev = ssn['previous']
         for n in sn:
             if isinstance(n[1], torch.nn.BatchNorm2d) or \
                isinstance(n[1], torch.nn.BatchNorm1d) or \

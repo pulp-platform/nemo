@@ -58,7 +58,9 @@ def _set_deployment_pact(self, eps_in, only_activations=False, **kwargs):
 
     """
 
+    self.stage = 'qd'
     if not only_activations:
+        self.eps_in = eps_in
         self.set_eps_in(eps_in)
     for n,m in self.named_modules():
         if ((not only_activations and m.__class__.__name__ == "PACT_QuantizedBatchNorm2d") or \

@@ -79,7 +79,7 @@ def _unfreeze_bn(self):
         if m.__class__.__name__ == "BatchNorm2d":
             m.train()
 
-def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0.):
+def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_alpha=True):
     r"""Performs batch-normalization folding following the algorithm presented in
     https://arxiv.org/abs/1905.04166. It performs both normal folding and inverse
     folding using two separate dictionaries `bn_dict` and `bn_inv_dict`.
@@ -94,6 +94,8 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0.):
     :type  eps: float
     :param phi_inv: parameter added to `gamma` in inverse folding for better numerical stability (default 0).
     :type  phi_inv: float
+    :param reset_alpha: if True, reset the clipping parameters of weights (default True).
+    :type  reset_alpha: bool
 
     """
 
@@ -196,6 +198,8 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0.):
             m.bias.data[:] = 0.
             m.running_mean.data[:] = 0.
             m.running_var.data[:] = (1. - eps)**2
+    if reset_alpha:
+        self.reset_alpha_weights()
 
 def _threshold_folding_pact(self, act_dict):
     r"""Performs the folding of batch-normalization layers into threshold-based

@@ -640,7 +640,7 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
 
     """
 
-    def __init__(self, precision=None, kappa=None, lamda=None, nb_channels=1, statistics_only=False):
+    def __init__(self, precision=None, kappa=None, lamda=None, nb_channels=1, statistics_only=False, dimensions=2):
         r"""Constructor.
 
         :param precision: instance defining the current quantization level (default `None`).
@@ -653,6 +653,8 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
         :type  nb_channels: int
         :param statistics_only: initialization value of `statistics_only` member.
         :type  statistics_only: bool
+        :param dimensions: number of BatchNorm dimensions (default 2).
+        :type  dimensions: int
 
         """
 
@@ -665,14 +667,18 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
             self.precision_lamda = precision
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+        if dimensions == 2:
+            param_shape = lambda n : (1, n, 1, 1)
+        elif dimensions == 1:
+            param_shape = lambda n : (n,)
         if kappa is None:
-            self.kappa = torch.nn.Parameter(torch.zeros(1,nb_channels,1,1).to(device), requires_grad=False)
+            self.kappa = torch.nn.Parameter(torch.zeros(*param_shape(nb_channels)).to(device), requires_grad=False)
         else:
-            self.kappa = torch.nn.Parameter(kappa.to(device), requires_grad=False).reshape((1,kappa.shape[0],1,1))
+            self.kappa = torch.nn.Parameter(kappa.to(device), requires_grad=False).reshape(param_shape(kappa.shape[0]))
         if lamda is None:
-            self.lamda = torch.nn.Parameter(torch.zeros(1,nb_channels,1,1).to(device), requires_grad=False)
+            self.lamda = torch.nn.Parameter(torch.zeros(*param_shape(nb_channels)).to(device), requires_grad=False)
         else:
-            self.lamda = torch.nn.Parameter(lamda.to(device), requires_grad=False).reshape((1,lamda.shape[0],1,1))
+            self.lamda = torch.nn.Parameter(lamda.to(device), requires_grad=False).reshape(param_shape(lamda.shape[0]))
 
         self.statistics_only = statistics_only
 

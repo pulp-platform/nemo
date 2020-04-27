@@ -284,5 +284,5 @@ class DeployGraph(object):
                 except IndexError:
                     break
             # forward-track route to node
-            supernodes[self.non_unique_names_dict[target.key]] = route[::-1]
+            supernodes[self.non_unique_names_dict[target.key]] = {'supernode': route[::-1], 'previous': self.non_unique_names_dict[curr.key]}
         return supernodes

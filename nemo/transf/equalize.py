@@ -32,22 +32,29 @@ import re
 from nemo.transf.common import *
 
 # Part of the procedure necessary for DFQ as described here https://arxiv.org/pdf/1906.04721.pdf            
-def _equalize_weights_dfq_pact(self, equalize_dict, verbose=False, cost_eps=1e-3, max_iter=1000):
+def _equalize_weights_dfq_pact(self, equalize_dict={}, act_dict={}, verbose=False, cost_eps=1e-3, max_iter=1000, reset_alpha=True):
     r"""This function implements the cross-layer weight-range equalization procedure proposed in 
     the Data-Free Quantization paper by Qualcomm (https://arxiv.org/pdf/1906.04721.pdf).
     It should be used only after batch-normalization layers have been folded into convolution
     by means of the `fold_bn` or `fold_bn_withinv` methods.
     
-    :param equalize_dict: a dictionary of layer names, with the key being the source and the value the target layer.
+    :param equalize_dict: a dictionary of layer names, with the key being a Linear and the value the next Linear layer.
     :type  equalize_dict: `dict` or `collections.OrderedDict`
+    :param act_dict: a dictionary of layer names, with the key being a Linear and the value the next Act layer. If empty, activation alpha scaling is not performed unless `equalize_dict` is also empty.
+    :type  act_dict: `dict` or `collections.OrderedDict`
     :param verbose: if True, prints more information.
     :type  verbose: bool
     :param cost_eps: equalization will iterate until the cost is less than this threshold or the number of iterations is greater than `max_iter`.
     :type  cost_eps: float
     :param max_iter: maximum number of iterations.
     :type  max_iter: int
+    :param reset_alpha: if True, reset the clipping parameters of weights (default True).
+    :type  reset_alpha: bool
 
     """
+
+    if not equalize_dict:
+        equalize_dict, act_dict = get_equalize_dict_from_supernodes(self)
 
     module_dict = {}
     for n,m in self.named_modules():
@@ -55,7 +62,8 @@ def _equalize_weights_dfq_pact(self, equalize_dict, verbose=False, cost_eps=1e-3
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \
-            m.__class__.__name__ == "BatchNorm1d" ):
+            m.__class__.__name__ == "BatchNorm1d" or \
+            m.__class__.__name__ == "PACT_Act"):
             module_dict[n] = m
     it = 0
     cost = 1e10
@@ -72,6 +80,9 @@ def _equalize_weights_dfq_pact(self, equalize_dict, verbose=False, cost_eps=1e-3
 
             s = torch.sqrt(range_after/range_before)
             m_before.weight.data[:] = m_before.weight.data[:] * reshape_before(m_before, s)
+            if act_dict:
+                # per-layer: has to use s max!
+                module_dict[act_dict[n_before]].alpha.data[:] *= s.max()
             try:
                 m_before.bias.data[:] = m_before.bias.data[:] * s
             except AttributeError:
@@ -84,6 +95,8 @@ def _equalize_weights_dfq_pact(self, equalize_dict, verbose=False, cost_eps=1e-3
         if verbose:
             logging.info("[DFQ Equalization] cost=%.5f" % cost)
     logging.info("[DFQ Equalization] terminated after %d iterations" % it)
+    if reset_alpha:
+        self.reset_alpha_weights()
 
 def _equalize_weights_unfolding_pact(self, bn_dict={}, verbose=False, eps=None):
     r"""Performs cross-layer equalization by unfolding of convolution parameters
