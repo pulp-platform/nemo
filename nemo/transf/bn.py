@@ -79,6 +79,38 @@ def _unfreeze_bn(self):
         if m.__class__.__name__ == "BatchNorm2d":
             m.train()
 
+def _prune_empty_bn_pact(self, bn_dict={}, threshold=None):
+    if not bn_dict:
+        bn_dict = get_bn_dict_from_supernodes(self)
+
+    module_dict = {}
+    for n,m in self.named_modules():
+        if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_Conv1d" or \
+            m.__class__.__name__ == "PACT_Linear" or \
+            m.__class__.__name__ == "BatchNorm2d" or \
+            m.__class__.__name__ == "BatchNorm1d" or \
+            m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
+            module_dict[n] = m
+    for n_before in bn_dict.keys():
+        n_after  = bn_dict[n_before]
+        m_before = module_dict[n_before]
+        m_after  = module_dict[n_after]
+        if threshold is None:
+            try:
+                eps = (m_before.W_alpha + m_before.W_beta) / (2.**m_before.W_precision.get_bits()-1)
+            except AttributeError:
+                continue
+        else:
+            eps = threshold
+        if m_before.bias is not None:
+            continue
+        try:
+            m_after.kappa.data[m_before.weight.data.flatten(1).abs().max(1)[0] < eps] = 0.
+        except AttributeError:
+            m_after.weight.data[m_before.weight.data.flatten(1).abs().max(1)[0] < eps] = 0.
+            m_after.running_var.data[m_before.weight.data.flatten(1).abs().max(1)[0] < eps] = 1.
+
 def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_alpha=True):
     r"""Performs batch-normalization folding following the algorithm presented in
     https://arxiv.org/abs/1905.04166. It performs both normal folding and inverse

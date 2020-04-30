@@ -83,8 +83,8 @@ def onnx_name_2_pytorch_name(name):
     return '.'.join(name_parts)
  
 def get_equalize_dict_from_supernodes(net):
-    eq_dict = {}
-    act_dict = {}
+    eq_dict = OrderedDict()
+    act_dict = OrderedDict()
     # check all supernodes for ACT and CONV layers
     lin = {}
     act = {}
@@ -105,7 +105,7 @@ def get_equalize_dict_from_supernodes(net):
     return eq_dict, act_dict
 
 def get_bn_dict_from_supernodes(net):
-    bn_dict = {}
+    bn_dict = OrderedDict()
     # check all supernodes for BN and CONV layers
     for k,ssn in net.graph.get_supernodes().items():
         bn = []
