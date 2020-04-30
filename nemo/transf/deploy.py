@@ -94,3 +94,23 @@ def _set_eps_in_pact(self, eps_in):
             for eps in eps_in_tmp:
                 eps_in_list.append(torch.tensor(eps.item(), requires_grad=False))
             m.eps_in_list = eps_in_list
+
+def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, **kwargs):
+    self.harden_weights()
+    if add_input_bias_dict:
+        self.add_input_bias(add_input_bias_dict)
+    if remove_bias_dict:
+        self.remove_bias(remove_bias_dict)
+    nemo.transform.bn_quantizer(self, **kwargs)
+    # harden_weights repeated to harden also BN parameters
+    self.harden_weights()
+    self.set_deployment(eps_in=eps_in)
+
+def _id_stage(self, eps_in=None, **kwargs):
+    if self.stage == 'fq':
+        self.qd_stage(eps_in=eps_in, **kwargs)
+    self.stage = 'id'
+    if eps_in is None:
+        eps_in = self.eps_in
+    nemo.transform.integerize_pact(self, eps_in=eps_in)
+
