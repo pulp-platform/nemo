@@ -19,9 +19,15 @@ NEMO is organized as a Python library that can be applied with relatively small 
 
 # Installation and requirements
 The NEMO library currently supports PyTorch >= 1.3.1 and runs on Python >= 3.5.
-To install it from PyPI, just run
+To install it from PyPI, just run:
 ```
 pip install pytorch-nemo
+```
+You can also install a development (and editable) version of NEMO by directly downloading this repo:
+```
+git clone https://github.com/pulp-platform/nemo
+cd nemo
+pip install -e .
 ```
 Then, you can import it in your script using
 ```
