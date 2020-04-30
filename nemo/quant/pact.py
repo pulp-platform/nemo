@@ -71,6 +71,7 @@ def pact_quantize_deploy(W, eps, clip):
     W = W.clamp(0, clip)
     return W
 
+# DEPRECATED
 # PACT signed quantization for inference (workaround for pact_quantize_signed not functional in inference)
 def pact_quantize_signed_inference(W, eps, clip):
     W_quant = W.clone().detach()
@@ -92,9 +93,13 @@ def pact_quantize_asymm_inference(W, eps, alpha, beta, train_loop=True, train_lo
     else:
         W_quant = W.clone().detach()
     W_quant.data[:] = (W_quant.data[:] / eps).floor()*eps
+    # alpha, beta are also represented with quantized numbers
+    alpha = torch.ceil(alpha/eps)*eps
+    beta  = torch.floor(beta/eps)*eps
     W_quant.clamp_(-alpha.item(), beta.item() + eps.item())
     return W_quant
 
+# DEPRECATED
 def pact_pwl(x, eps, alpha, beta, q0=0):
     beta = beta.abs()
     beta_cumsum = beta.cumsum(0)
@@ -177,6 +182,7 @@ class PACT_QuantFunc(torch.autograd.Function):
 
 pact_quantize = PACT_QuantFunc.apply
 
+# DEPRECATED
 class PACT_QuantFunc_Signed(torch.autograd.Function):
     r"""PACT (PArametrized Clipping acTivation) quantization function for weights (simmetric).
 
@@ -229,6 +235,7 @@ class PACT_QuantFunc_Signed(torch.autograd.Function):
         grad_alpha = torch.where(where_input_gtalpha, grad_output, zero).sum().expand(1)
         return grad_input, None, grad_alpha
 
+# DEPRECATED
 pact_quantize_signed = PACT_QuantFunc_Signed.apply
 
 class PACT_QuantFunc_Asymm(torch.autograd.Function):
@@ -271,11 +278,16 @@ class PACT_QuantFunc_Asymm(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, input, eps, alpha, beta, delta=1e-9):
-        where_input_nonclipped = (input >= -alpha) * (input < beta)
-        where_input_ltalpha = (input < -alpha)
-        where_input_gtbeta = (input >= beta)
+        # we quantize also alpha, beta. for beta it's "cosmetic", for alpha it is 
+        # substantial, because also alpha will be represented as a wholly integer number
+        # down the line
+        alpha_quant = (alpha.data[0] / (eps+delta)).ceil()  * eps
+        beta_quant  = (beta.data[0]  / (eps+delta)).floor() * eps
+        where_input_nonclipped = (input >= -alpha_quant) * (input < beta_quant)
+        where_input_ltalpha = (input < -alpha_quant)
+        where_input_gtbeta = (input >= beta_quant)
         ctx.save_for_backward(where_input_nonclipped, where_input_ltalpha, where_input_gtbeta)
-        return (input.clamp(-alpha.data[0], beta.data[0]) / (eps+delta)).floor() * eps
+        return (input.clamp(-alpha_quant, beta_quant) / (eps+delta)).floor() * eps
 
     @staticmethod
     def backward(ctx, grad_output):
