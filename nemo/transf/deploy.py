@@ -30,6 +30,7 @@ import math
 import torchvision.models
 import re
 from nemo.transf.common import *
+import nemo
 
 def _get_eps_at(self, *args, **kwargs):
     if hasattr(self, 'graph'):
@@ -95,8 +96,10 @@ def _set_eps_in_pact(self, eps_in):
                 eps_in_list.append(torch.tensor(eps.item(), requires_grad=False))
             m.eps_in_list = eps_in_list
 
-def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, **kwargs):
+def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, prune_empty_bn=True, **kwargs):
     self.harden_weights()
+    if prune_empty_bn:
+        self.prune_empty_bn(threshold=1e-9)
     if add_input_bias_dict:
         self.add_input_bias(add_input_bias_dict)
     if remove_bias_dict:

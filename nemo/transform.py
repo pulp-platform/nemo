@@ -109,6 +109,7 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=F
     module.fold_bn                     = types.MethodType(nemo.transf.bn._fold_bn_pact, module)
     module.fold_bn_withinv             = types.MethodType(nemo.transf.bn._fold_bn_pact, module)
     module.fold_thresholds             = types.MethodType(nemo.transf.bn._threshold_folding_pact, module)
+    module.prune_empty_bn              = types.MethodType(nemo.transf.bn._prune_empty_bn_pact, module)
     module.get_eps_at                  = types.MethodType(nemo.transf.deploy._get_eps_at, module)
     module.set_eps_in                  = types.MethodType(nemo.transf.deploy._set_eps_in_pact, module)
     module.harden_weights              = types.MethodType(nemo.transf.deploy._harden_weights_pact, module)
