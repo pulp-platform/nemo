@@ -115,7 +115,7 @@ def get_bn_dict_from_supernodes(net):
         for n in sn:
             if isinstance(n[1], torch.nn.BatchNorm2d) or \
                isinstance(n[1], torch.nn.BatchNorm1d) or \
-               isinstance(n[1], PACT_QuantizedBatchNorm2d):
+               isinstance(n[1], PACT_QuantizedBatchNormNd):
                 bn.append(n[0])
             if isinstance(n[1], PACT_Conv2d) or \
                isinstance(n[1], PACT_Conv1d) or \

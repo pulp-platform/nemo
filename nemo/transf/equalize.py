@@ -78,6 +78,14 @@ def _equalize_weights_dfq_pact(self, equalize_dict={}, act_dict={}, verbose=Fals
             old_prec_before_mean = (weight_range(m_before, 0).abs() / (m_before.weight.max() - m_before.weight.min()).abs()).sum().item()
             old_prec_after_mean  = (weight_range(m_after, 0).abs()  / (m_after.weight.max()  - m_after.weight.min()).abs()).sum().item()
 
+            # this happens when the two layers are across a Flatten operation
+            flatten_flag = False
+            if range_after.shape[0] != range_before.shape[0]:
+                flatten_flag = True
+                range_after = range_after.reshape((range_before.shape[0], -1))
+                flatten_dim = range_after.shape[1]
+                range_after = range_after.max(1)[0]
+
             s = torch.sqrt(range_after/range_before)
             m_before.weight.data[:] = m_before.weight.data[:] * reshape_before(m_before, s)
             if act_dict:
@@ -87,6 +95,10 @@ def _equalize_weights_dfq_pact(self, equalize_dict={}, act_dict={}, verbose=Fals
                 m_before.bias.data[:] = m_before.bias.data[:] * s
             except AttributeError:
                 pass
+
+            if flatten_flag:
+                s = torch.cat(flatten_dim*(s.unsqueeze(1),),1).flatten()
+
             m_after.weight.data[:]  = m_after.weight.data[:] / reshape_after(m_after, s)
             new_prec_before_mean = (weight_range(m_before, 0).abs() / (m_before.weight.max() - m_before.weight.min()).abs()).sum().item()
             new_prec_after_mean  = (weight_range(m_after, 0).abs()  / (m_after.weight.max()  - m_after.weight.min()).abs()).sum().item()

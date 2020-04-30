@@ -29,7 +29,16 @@ import logging
 # Create custom symbolic function
 from torch.onnx.symbolic_helper import parse_args
 
-__all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNorm2d", "PACT_IntegerBatchNorm2d"]
+DEFAULT_ACT_REQNT_FACTOR = 256
+DEFAULT_ADD_REQNT_FACTOR = 256
+DEFAULT_POOL_REQNT_FACTOR = 256
+
+__all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
+
+# re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
+def pact_quantized_requantize(t, eps_in, eps_out, D=1):
+    eps_ratio = (D*eps_in/eps_out).round()
+    return t * eps_ratio / D
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 def pact_integer_requantize(t, eps_in, eps_out, D=1):
@@ -296,7 +305,7 @@ class PACT_Act(torch.nn.Module):
 
     """
 
-    def __init__(self, precision=None, alpha=1., backprop_alpha=True, statistics_only=False, leaky=None):
+    def __init__(self, precision=None, alpha=1., backprop_alpha=True, statistics_only=False, leaky=None, requantization_factor=DEFAULT_ACT_REQNT_FACTOR):
         r"""Constructor. Initializes a :py:class:`torch.nn.Parameter` for :math:`\alpha` and sets
             up the initial value of the `statistics_only` member.
 
@@ -323,6 +332,7 @@ class PACT_Act(torch.nn.Module):
         self.deployment = False
         self.eps_in = None
         self.leaky = leaky
+        self.requantization_factor = requantization_factor
 
         # these are only used to gather statistics
         self.max          = torch.nn.Parameter(torch.zeros_like(self.alpha.data).to(device), requires_grad=False)
@@ -336,6 +346,8 @@ class PACT_Act(torch.nn.Module):
         """
         self.eps_static   = self.alpha.item()/(2.0**(self.precision.get_bits())-1)
         self.alpha_static = self.alpha.item()
+        # D is selected as a power-of-two
+        self.D = 2.0**torch.ceil(torch.log2(self.requantization_factor * self.eps_static / self.eps_in))
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -390,7 +402,9 @@ class PACT_Act(torch.nn.Module):
         """
 
         if self.deployment:
-            return pact_quantize_deploy(x, self.eps_static, self.alpha_static)
+            x_rq = pact_quantized_requantize(x/self.eps_in, self.eps_in, self.eps_static, self.D) * self.eps_static
+            return x_rq.clamp(0, self.alpha_static)
+            # return pact_quantize_deploy(x, self.eps_static, self.alpha_static)
         elif self.statistics_only:
             if self.leaky is None:
                 x = torch.nn.functional.relu(x)
@@ -413,7 +427,7 @@ class PACT_IntegerAdd(torch.nn.Module):
 
     """
 
-    def __init__(self, alpha=1., precision=None, requantization_factor=256):
+    def __init__(self, alpha=1., precision=None, requantization_factor=DEFAULT_ADD_REQNT_FACTOR):
         r"""Constructor. Initializes a :py:class:`torch.nn.Parameter` for :math:`\alpha`.
 
         :param precision: instance defining the current quantization level (default `None`).
@@ -457,7 +471,7 @@ class PACT_IntegerAdd(torch.nn.Module):
 
 class PACT_IntegerAvgPool2d(torch.nn.AvgPool2d):
     def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
-            count_include_pad=True, divisor_override=None, requantization_factor=16):
+            count_include_pad=True, divisor_override=None, requantization_factor=DEFAULT_POOL_REQNT_FACTOR):
         super(PACT_IntegerAvgPool2d, self).__init__(kernel_size, stride=stride, padding=padding, ceil_mode=ceil_mode,
             count_include_pad=count_include_pad, divisor_override=divisor_override)
         self.requantization_factor = requantization_factor
@@ -497,7 +511,7 @@ class PACT_IntegerAct(torch.nn.Module):
 
     """
 
-    def __init__(self, eps_in, alpha=1., precision=None, requantization_factor=16):
+    def __init__(self, eps_in, alpha=1., precision=None, requantization_factor=DEFAULT_ACT_REQNT_FACTOR):
         r"""Constructor. Initializes a :py:class:`torch.nn.Parameter` for :math:`\alpha`.
 
         :param precision: instance defining the current quantization level (default `None`).
@@ -593,8 +607,6 @@ class PACT_ThresholdAct(torch.nn.Module):
         :type  precision: :py:class:`nemo.precision.Precision`
         :param alpha: the value of :math:`\alpha`.
         :type  alpha: `torch.Tensor` or float
-        :param requantization_factor: minimum target ratio in requantization fraction (default 100).
-        :type  requantization_factor: int
 
         """
         super(PACT_ThresholdAct, self).__init__()
@@ -633,10 +645,10 @@ class PACT_ThresholdAct(torch.nn.Module):
         eps = self.alpha/(2**self.precision.get_bits()-1)
         return pact_quantize_inference((x.data[:] - lamda) / kappa, eps, self.alpha)
 
-class PACT_QuantizedBatchNorm2d(torch.nn.Module):
-    r"""PACT-quantized 2d BatchNorm.
+class PACT_QuantizedBatchNormNd(torch.nn.Module):
+    r"""PACT-quantized N-dimensional BatchNorm.
 
-    Implements a :py:class:`torch.nn.Module` to implement a :py:class:`torch.nn.BatchNorm2d` with quantized parameters.
+    Implements a :py:class:`torch.nn.Module` to implement a :py:class:`torch.nn.BatchNorm2d` or :py:class:`torch.nn.BatchNorm1d` with quantized parameters.
 
     """
 
@@ -658,7 +670,7 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
 
         """
 
-        super(PACT_QuantizedBatchNorm2d, self).__init__()
+        super(PACT_QuantizedBatchNormNd, self).__init__()
         if precision is None:
             self.precision_kappa = Precision(bits=16)
             self.precision_lamda = Precision(bits=16)
@@ -671,47 +683,58 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
             param_shape = lambda n : (1, n, 1, 1)
         elif dimensions == 1:
             param_shape = lambda n : (n,)
+
         if kappa is None:
             self.kappa = torch.nn.Parameter(torch.zeros(*param_shape(nb_channels)).to(device), requires_grad=False)
         else:
-            self.kappa = torch.nn.Parameter(kappa.to(device), requires_grad=False).reshape(param_shape(kappa.shape[0]))
+            self.kappa = torch.nn.Parameter(kappa.to(device).reshape(param_shape(kappa.shape[0])), requires_grad=False)
         if lamda is None:
             self.lamda = torch.nn.Parameter(torch.zeros(*param_shape(nb_channels)).to(device), requires_grad=False)
         else:
-            self.lamda = torch.nn.Parameter(lamda.to(device), requires_grad=False).reshape(param_shape(lamda.shape[0]))
+            self.lamda = torch.nn.Parameter(lamda.to(device).reshape(param_shape(lamda.shape[0])), requires_grad=False) 
 
         self.statistics_only = statistics_only
 
         self.min = torch.nn.Parameter(torch.zeros(1).to(device), requires_grad=False)
         self.max = torch.nn.Parameter(torch.zeros(1).to(device), requires_grad=False)
 
-        self.deployment = False
+        self.onnx_qd_output = False
         self.eps_kappa = None
         self.eps_lamda = None
         self.eps_in = None
         self.eps_lamda_min = 1e-6
+        self.hardened = False
         
     def harden_weights(self):
         r"""Replaces the current value of weight tensors (full-precision, quantized on forward-prop) with the quantized value.
 
         """
 
-        kappa_int = self.kappa.abs().max()
-        if self.eps_kappa is None:
-            eps_kappa = 2*kappa_int/(2**self.precision_kappa.get_bits()-1)
-        else:
-            eps_kappa = self.eps_kappa
-        lamda_int = self.lamda.abs().max()
-        if self.eps_lamda is None:
-            eps_lamda = 2*lamda_int/(2**self.precision_lamda.get_bits()-1)
-        else:
-            eps_lamda = self.eps_lamda
-        # this is because lamda might be 0!
-        if eps_lamda < self.eps_lamda_min:
-            eps_lamda = self.eps_lamda_min
+        if not self.hardened:
+            kappa_int = self.kappa.abs().max()
+            lamda_int = self.lamda.abs().max()
+            if self.eps_kappa is None:
+                eps_kappa = 2*kappa_int/(2**self.precision_kappa.get_bits()-1)
+            else:
+                eps_kappa = self.eps_kappa
+            if self.eps_lamda is None:
+                eps_lamda = 2*lamda_int/(2**self.precision_lamda.get_bits()-1)
+            else:
+                eps_lamda = self.eps_lamda
+            # this is because lamda might be 0!
+            if eps_lamda < self.eps_lamda_min:
+                eps_lamda = self.eps_lamda_min
+            kappa_int = torch.floor(kappa_int / eps_kappa) * eps_kappa
+            lamda_int = torch.floor(lamda_int / eps_lamda) * eps_lamda
+            kappa_int = self.kappa.abs().max()
+            lamda_int = self.lamda.abs().max()
 
-        self.kappa.data[:] = pact_quantize_signed_inference(self.kappa.data[:], eps_kappa, kappa_int)
-        self.lamda.data[:] = pact_quantize_signed_inference(self.lamda.data[:], eps_lamda, lamda_int)
+            self.eps_kappa = eps_kappa
+            self.eps_lamda = eps_lamda
+
+            self.kappa.data[:] = pact_quantize_signed_inference(self.kappa.data[:], eps_kappa, kappa_int)
+            self.lamda.data[:] = pact_quantize_signed_inference(self.lamda.data[:], eps_lamda, lamda_int)
+            self.hardened = True
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -758,7 +781,7 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
 
         kappa = self.kappa
         lamda = self.lamda
-        if self.deployment:
+        if self.onnx_qd_output: # this representation is *only* used to get a nice ONNX output, should *not* be used for actual deployment!
             if self.eps_kappa is None:
                 with torch.no_grad():
                     kappa_int = self.kappa.abs().max()
@@ -774,15 +797,19 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
             y = kappa * x + lamda
             return y
         if not self.statistics_only:
-            kappa_int = self.kappa.abs().max()
-            lamda_int = self.lamda.abs().max()
-            eps_kappa = 2*kappa_int/(2**self.precision_kappa.get_bits()-1)
-            eps_lamda = 2*lamda_int/(2**self.precision_lamda.get_bits()-1)
-            # this is because lamda might be 0!
-            if eps_lamda < self.eps_lamda_min:
-                eps_lamda = self.eps_lamda_min
+            with torch.no_grad():
+                kappa_int = self.kappa.abs().max()
+                lamda_int = self.lamda.abs().max()
+                eps_kappa = 2*kappa_int/(2**self.precision_kappa.get_bits()-1)
+                eps_lamda = 2*lamda_int/(2**self.precision_lamda.get_bits()-1)
+                # this is because lamda might be 0!
+                if eps_lamda < self.eps_lamda_min:
+                    eps_lamda = self.eps_lamda_min
+                kappa_int = torch.floor(kappa_int / eps_kappa) * eps_kappa
+                lamda_int = torch.floor(lamda_int / eps_lamda) * eps_lamda
             kappa = pact_quantize_signed_inference(kappa, eps_kappa, kappa_int)
             lamda = pact_quantize_signed_inference(lamda, eps_lamda, lamda_int)
+            lamda = pact_quantized_requantize(lamda/eps_lamda, eps_lamda, eps_kappa*self.eps_in) * eps_kappa*self.eps_in
         out = kappa*x + lamda
         if self.statistics_only:
             with torch.no_grad():
@@ -790,10 +817,10 @@ class PACT_QuantizedBatchNorm2d(torch.nn.Module):
                 self.max[:] = min(self.max.item(), out.max())
         return out
 
-class PACT_IntegerBatchNorm2d(torch.nn.Module):
-    r"""Integer 2d BatchNorm.
+class PACT_IntegerBatchNormNd(torch.nn.Module):
+    r"""Integer N-dimensional BatchNorm.
 
-    Implements a :py:class:`torch.nn.Module` to implement a :py:class:`torch.nn.BatchNorm2d` with integer parameters.
+    Implements a :py:class:`torch.nn.Module` to implement a :py:class:`torch.nn.BatchNorm2d` or :py:class:`torch.nn.BatchNorm1d` with integer parameters.
 
     """
 
@@ -813,7 +840,7 @@ class PACT_IntegerBatchNorm2d(torch.nn.Module):
 
         """
 
-        super(PACT_IntegerBatchNorm2d, self).__init__()
+        super(PACT_IntegerBatchNormNd, self).__init__()
         self.kappa = kappa
         self.lamda = lamda
         self.eps_kappa = eps_kappa
@@ -825,10 +852,10 @@ class PACT_IntegerBatchNorm2d(torch.nn.Module):
 
         """
 
-        kappa_int = self.kappa.abs().max()
-        lamda_int = self.lamda.abs().max()
-        self.kappa.data[:] = torch.round(pact_quantize_signed_inference(self.kappa.data[:], self.eps_kappa, kappa_int) / self.eps_kappa)
-        self.lamda.data[:] = torch.round(pact_quantize_signed_inference(self.lamda.data[:], self.eps_lamda, lamda_int) / self.eps_lamda)
+        # kappa_int = self.kappa.abs().max()
+        # lamda_int = self.lamda.abs().max()
+        self.kappa.data[:] = self.kappa / self.eps_kappa #torch.round(pact_quantize_signed_inference(self.kappa.data[:], self.eps_kappa, kappa_int) / self.eps_kappa)
+        self.lamda.data[:] = self.lamda / self.eps_lamda #torch.round(pact_quantize_signed_inference(self.lamda.data[:], self.eps_lamda, lamda_int) / self.eps_lamda)
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -958,6 +985,7 @@ class PACT_Conv2d(torch.nn.Conv2d):
         self.train_loop_oldprec = None
 
         self.padding_value = 0
+        self.hardened = False
 
     def reset_alpha_weights(self, use_max=True, nb_std=5., verbose=False, **kwargs):
         r"""Resets :math:`\alpha` and :math:`\beta` parameters for weights.
@@ -981,10 +1009,19 @@ class PACT_Conv2d(torch.nn.Conv2d):
 
         """
 
-        if self.quant_asymm:
-            self.weight.data = pact_quantize_asymm_inference(self.weight, (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1), self.W_alpha, self.W_beta, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
-        else: 
-            self.weight.data = pact_quantize_signed_inference(self.weight, 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1), self.W_alpha)
+        if not self.hardened:
+            # here, clipping parameters are also quantized in order to cope with the PACT variant utilized here.
+            # in this way, the ID version will be able to use only an integer displacement or none at all if
+            # symmetric weights are used
+            if self.quant_asymm:
+                self.reset_alpha_weights()
+                eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
+                self.reset_alpha_weights()
+            else: 
+                eps = (2*self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
+            self.hardened = True
 
     def integerize_weights(self):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
@@ -1145,10 +1182,7 @@ class PACT_Conv1d(torch.nn.Conv1d):
         self.train_loop = True
         self.deployment = False
         self.train_loop_oldprec = None
-
-    # this is for ONNX export -- right now, ignore quantization (FIXME)
-    def symbolic(g, self, input):
-        return g.op("Conv", self)
+        self.hardened = False
 
     def reset_alpha_weights(self, use_max=True, nb_std=5., verbose=False, **kwargs):
         r"""Resets :math:`\alpha` and :math:`\beta` parameters for weights.
@@ -1167,15 +1201,25 @@ class PACT_Conv1d(torch.nn.Conv1d):
             logging.info("[Quant] W_alpha = %.5f" % self.W_alpha.data[0])
             logging.info("[Quant] W_beta  = %.5f" % self.W_beta.data[0])
 
+
     def harden_weights(self):
         r"""Replaces the current value of weight tensors (full-precision, quantized on forward-prop) with the quantized value.
 
         """
 
-        if self.quant_asymm:
-            self.weight.data = pact_quantize_asymm_inference(self.weight, (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1), self.W_alpha, self.W_beta, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
-        else:
-            self.weight.data = pact_quantize_signed_inference(self.weight, 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1), self.W_alpha)
+        if not self.hardened:
+            # here, clipping parameters are also quantized in order to cope with the PACT variant utilized here.
+            # in this way, the ID version will be able to use only an integer displacement or none at all if
+            # symmetric weights are used
+            if self.quant_asymm:
+                self.reset_alpha_weights()
+                eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
+                self.reset_alpha_weights()
+            else: 
+                eps = (2*self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
+            self.hardened = True
 
     def integerize_weights(self):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
@@ -1288,9 +1332,7 @@ class PACT_Linear(torch.nn.Linear):
         self.train_loop = True
         self.deployment = False
         self.train_loop_oldprec = None
-
-    def symbolic(g, self, input):
-        return g.op("MatMul", self)
+        self.hardened = False
 
     def reset_alpha_weights(self, use_max=True, nb_std=5., verbose=False, **kwargs):
         r"""Resets :math:`\alpha` and :math:`\beta` parameters for weights.
@@ -1314,10 +1356,19 @@ class PACT_Linear(torch.nn.Linear):
 
         """
 
-        if self.quant_asymm:
-            self.weight.data = pact_quantize_asymm_inference(self.weight, (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1), self.W_alpha, self.W_beta, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
-        else:
-            self.weight.data = pact_quantize_signed_inference(self.weight, 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1), self.W_alpha)
+        if not self.hardened:
+            # here, clipping parameters are also quantized in order to cope with the PACT variant utilized here.
+            # in this way, the ID version will be able to use only an integer displacement or none at all if
+            # symmetric weights are used
+            if self.quant_asymm:
+                self.reset_alpha_weights()
+                eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
+                self.reset_alpha_weights()
+            else: 
+                eps = (2*self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
+            self.hardened = True
 
     def integerize_weights(self):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
