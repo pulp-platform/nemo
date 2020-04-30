@@ -78,19 +78,19 @@ def _unset_statistics_act_pact(self):
             m.statistics_only = False
 
 def _set_statistics_bn_pact(self):
-    r"""Sets :py:class:nemo.quant.PACT_QuantizedBatchNorm2d` layers to collect statistics.
+    r"""Sets :py:class:nemo.quant.PACT_QuantizedBatchNormNd` layers to collect statistics.
     
     """
 
     for n,m in self.named_modules():
-        if m.__class__.__name__ == "PACT_QuantizedBatchNorm2d":
+        if m.__class__.__name__ == "PACT_QuantizedBatchNormNd":
             m.statistics_only = True
 
 def _unset_statistics_bn_pact(self):
-    r"""Sets :py:class:`nemo.quant.PACT_QuantizedBatchNorm2d` layers to act normally and stop statistics collection.
+    r"""Sets :py:class:`nemo.quant.PACT_QuantizedBatchNormNd` layers to act normally and stop statistics collection.
     
     """
 
     for n,m in self.named_modules():
-        if m.__class__.__name__ == "PACT_QuantizedBatchNorm2d":
+        if m.__class__.__name__ == "PACT_QuantizedBatchNormNd":
             m.statistics_only = False

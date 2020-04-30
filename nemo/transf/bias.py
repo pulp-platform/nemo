@@ -31,7 +31,7 @@ import torchvision.models
 import re
 from nemo.transf.common import *
 
-def _add_input_bias_pact(self, lin_dict):
+def _add_input_bias_pact(self, lin_dict, eps_in=None):
     r"""Adds a bias to compensate the asymmetry of an input activation tensor.
     
     :param lin_dict: a dictionary, where the key is the linear layer name and the value is the related activation translation.
@@ -56,9 +56,14 @@ def _add_input_bias_pact(self, lin_dict):
                 m.bias.data[:] = m.bias.data[:] - lin_dict[n] * m.weight.data[:].sum(3).sum(2).sum(1)
             except AttributeError:
                 m.bias = torch.nn.Parameter(-lin_dict[n] * m.weight.data[:].sum(3).sum(2).sum(1))
-            m.padding_value = lin_dict[n]
-        else:
+            if eps_in is None:
+                m.padding_value = lin_dict[n]
+            else:
+                m.padding_value = math.floor(lin_dict[n]/eps_in)*eps_in
+        elif eps_in is None:
             m.value = lin_dict[n]
+        else:
+            m.value = math.floor(lin_dict[n]/eps_in)*eps_in
     self.input_bias_dict = lin_dict
 
 def _remove_input_bias_pact(self):

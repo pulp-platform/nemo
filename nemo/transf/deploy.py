@@ -47,7 +47,7 @@ def _harden_weights_pact(self, **kwargs):
             m.__class__.__name__ == "PACT_Linear"):
             m.train_loop_oldprec = float(m.W_beta.item()+m.W_alpha.item())/(2.0**(m.W_precision.get_bits())-1)
             m.harden_weights(**kwargs)
-        if (m.__class__.__name__ == "PACT_QuantizedBatchNorm2d"):
+        if (m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
             m.harden_weights(**kwargs)
 
 def _set_deployment_pact(self, eps_in, only_activations=False, **kwargs):
@@ -63,8 +63,7 @@ def _set_deployment_pact(self, eps_in, only_activations=False, **kwargs):
         self.eps_in = eps_in
         self.set_eps_in(eps_in)
     for n,m in self.named_modules():
-        if ((not only_activations and m.__class__.__name__ == "PACT_QuantizedBatchNorm2d") or \
-            (not only_activations and m.__class__.__name__ == "PACT_Conv2d") or \
+        if ((not only_activations and m.__class__.__name__ == "PACT_Conv2d") or \
             (not only_activations and m.__class__.__name__ == "PACT_Conv1d") or \
             (not only_activations and m.__class__.__name__ == "PACT_Linear") or \
             (not only_activations and m.__class__.__name__ == "PACT_IntegerAdd") or \
@@ -87,7 +86,7 @@ def _set_eps_in_pact(self, eps_in):
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Act"):
             m.eps_in = torch.tensor(self.get_eps_at(n, eps_in).item(), requires_grad=False)
-        if (m.__class__.__name__ == "PACT_QuantizedBatchNorm2d"):
+        if (m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
             m.eps_in = torch.tensor(self.get_eps_at(n, eps_in).item(), requires_grad=False)
         if (m.__class__.__name__ == "PACT_IntegerAdd"):
             eps_in_tmp = self.get_eps_at(n, eps_in)

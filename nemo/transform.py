@@ -172,7 +172,7 @@ def _hier_bn_quantizer(module, **kwargs):
         sigma = torch.sqrt(module.running_var.data[:] + module.eps).clone().detach()
         mu = module.running_mean.data[:].clone().detach()
         dimensions = 1 if module.__class__.__name__ == 'BatchNorm1d' else 2
-        module = PACT_QuantizedBatchNorm2d(kappa=gamma/sigma, lamda=beta-gamma/sigma*mu, dimensions=dimensions, **kwargs)
+        module = PACT_QuantizedBatchNormNd(kappa=gamma/sigma, lamda=beta-gamma/sigma*mu, dimensions=dimensions, **kwargs)
         return module
     else:
         for n,m in module.named_children():
@@ -180,8 +180,7 @@ def _hier_bn_quantizer(module, **kwargs):
         return module
 
 def _hier_bn_dequantizer(module):
-    if module.__class__.__name__ == 'PACT_QuantizedBatchNorm2d':# or \
-    #    module.__class__.__name__ == 'BatchNorm1d':
+    if module.__class__.__name__ == 'PACT_QuantizedBatchNormNd':
         gamma = module.kappa.data[:].clone().detach().flatten()
         beta = module.lamda.data[:].clone().detach().flatten()
         module = torch.nn.BatchNorm2d(weight=gamma, bias=beta)
@@ -197,8 +196,8 @@ def _hier_integerizer(module, **kwargs):
         module.__class__.__name__ == "PACT_Linear"):
         module.integerize_weights(**kwargs)
         return module
-    elif (module.__class__.__name__ == "PACT_QuantizedBatchNorm2d"):
-        module = PACT_IntegerBatchNorm2d(kappa=module.kappa, lamda=module.lamda, eps_in=module.eps_in, eps_kappa=module.eps_kappa, eps_lamda=module.eps_lamda)
+    elif (module.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
+        module = PACT_IntegerBatchNormNd(kappa=module.kappa, lamda=module.lamda, eps_in=module.eps_in, eps_kappa=module.eps_kappa, eps_lamda=module.eps_lamda)
         module.integerize_weights(**kwargs)
     elif (module.__class__.__name__ == "PACT_Act"):
         module = PACT_IntegerAct(precision=module.precision, eps_in=module.eps_in, alpha=module.alpha)

@@ -109,8 +109,7 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \
             m.__class__.__name__ == "BatchNorm1d" or \
-            m.__class__.__name__ == "PACT_QuantizedBatchNorm2d" or \
-            m.__class__.__name__ == "PACT_QuantizedBatchNorm1d" ):
+            m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
             module_dict[n] = m
     param = {}
     bn_list = list(bn_dict.values()) + list(bn_inv_dict.keys())
@@ -123,8 +122,7 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_
                 eps = m.eps
             except AttributeError:
                 eps = 0.
-        if m.__class__.__name__ == "PACT_QuantizedBatchNorm2d" or \
-           m.__class__.__name__ == "PACT_QuantizedBatchNorm1d":
+        if m.__class__.__name__ == "PACT_QuantizedBatchNormNd":
             gamma = m.kappa.data[:].clone().detach().cpu().flatten()
             beta  = m.lamda.data[:].clone().detach().cpu().flatten()
             sigma = torch.ones_like(gamma).flatten()
@@ -189,8 +187,7 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_
     # neutralize BatchNorm's
     for n in bn_list:
         m = module_dict[n]
-        if m.__class__.__name__ == "PACT_QuantizedBatchNorm2d" or \
-           m.__class__.__name__ == "PACT_QuantizedBatchNorm1d":
+        if m.__class__.__name__ == "PACT_QuantizedBatchNormNd":
             m.kappa.data[:] = 1.
             m.lamda.data[:] = 0.
         else:
