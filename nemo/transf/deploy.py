@@ -96,7 +96,7 @@ def _set_eps_in_pact(self, eps_in):
                 eps_in_list.append(torch.tensor(eps.item(), requires_grad=False))
             m.eps_in_list = eps_in_list
 
-def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, prune_empty_bn=True, **kwargs):
+def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, prune_empty_bn=True, int_accurate=True, **kwargs):
     self.harden_weights()
     if prune_empty_bn:
         self.prune_empty_bn(threshold=1e-9)
@@ -104,9 +104,14 @@ def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, pr
         self.add_input_bias(add_input_bias_dict)
     if remove_bias_dict:
         self.remove_bias(remove_bias_dict)
-    nemo.transform.bn_quantizer(self, **kwargs)
-    # harden_weights repeated to harden also BN parameters
-    self.harden_weights()
+    if int_accurate:
+        nemo.transform.bn_quantizer(self, **kwargs)
+        # harden_weights repeated to harden also BN parameters
+        self.harden_weights()
+    else:  # this is mainly useful for debug purposes, to identify misalignments FQ/QD
+        for n,m in self.named_modules():
+            if (m.__class__.__name__ == "PACT_Act"):
+                m.precise = True
     self.set_deployment(eps_in=eps_in)
 
 def _id_stage(self, eps_in=None, **kwargs):

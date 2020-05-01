@@ -175,7 +175,7 @@ class PACT_QuantFunc(torch.autograd.Function):
         where_input_nonclipped = (input >= 0) * (input < alpha)
         where_input_gtalpha = (input >= alpha)
         ctx.save_for_backward(where_input_nonclipped, where_input_gtalpha)
-        return (input.clamp(0., alpha.data[0]) / (eps+delta)).floor() * eps
+        return ((input / (eps+delta)).floor() * eps).clamp(0., alpha.data[0]-eps.data[0])
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -287,13 +287,13 @@ class PACT_QuantFunc_Asymm(torch.autograd.Function):
         # we quantize also alpha, beta. for beta it's "cosmetic", for alpha it is 
         # substantial, because also alpha will be represented as a wholly integer number
         # down the line
-        alpha_quant = (alpha.data[0] / (eps+delta)).ceil()  * eps
-        beta_quant  = (beta.data[0]  / (eps+delta)).floor() * eps
+        alpha_quant = (alpha.item() / (eps+delta)).ceil()  * eps
+        beta_quant  = (beta.item()  / (eps+delta)).floor() * eps
         where_input_nonclipped = (input >= -alpha_quant) * (input < beta_quant)
         where_input_ltalpha = (input < -alpha_quant)
         where_input_gtbeta = (input >= beta_quant)
         ctx.save_for_backward(where_input_nonclipped, where_input_ltalpha, where_input_gtbeta)
-        return (input.clamp(-alpha_quant, beta_quant) / (eps+delta)).floor() * eps
+        return (input.clamp(-alpha_quant.item(), beta_quant.item()) / (eps+delta)).floor() * eps
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -357,6 +357,8 @@ class PACT_Act(torch.nn.Module):
         self.min          = torch.nn.Parameter(torch.zeros_like(self.alpha.data).to(device), requires_grad=False)
         self.running_mean = torch.nn.Parameter(torch.zeros_like(self.alpha.data).to(device), requires_grad=False)
         self.running_var  = torch.nn.Parameter(torch.ones_like(self.alpha.data).to(device),  requires_grad=False)
+
+        self.precise = False
 
     def set_static_precision(self):
         r"""Sets static parameters used only for deployment.
@@ -423,9 +425,8 @@ class PACT_Act(torch.nn.Module):
         """
 
         if self.deployment:
-            x_rq = pact_quantized_requantize(x, self.eps_in, self.eps_static, self.D) * self.eps_static
+            x_rq = pact_quantized_requantize(x, self.eps_in, self.eps_static, self.D, exclude_requant_rounding=self.precise) * self.eps_static
             return x_rq.clamp(0, self.alpha_static.data[0] - self.eps_static.data[0])
-            # return pact_quantize_deploy(x, self.eps_static, self.alpha_static)
         elif self.statistics_only:
             if self.leaky is None:
                 x = torch.nn.functional.relu(x)
@@ -438,7 +439,8 @@ class PACT_Act(torch.nn.Module):
                 self.running_var[:]  = 0.9 * self.running_var.item()  + 0.1 * x.std()*x.std()
             return x
         else:
-            return pact_quantize(x, self.alpha/(2.0**(self.precision.get_bits())-1), self.alpha)
+            eps = self.alpha/(2.0**(self.precision.get_bits())-1)
+            return pact_quantize(x, eps, self.alpha)
 
 class PACT_IntegerAdd(torch.nn.Module):
     r"""PACT (PArametrized Clipping acTivation) activation for integer images.
@@ -830,7 +832,7 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
                 lamda_int = torch.floor(lamda_int / eps_lamda) * eps_lamda
             kappa = pact_quantize_signed_inference(kappa, eps_kappa, kappa_int)
             lamda = pact_quantize_signed_inference(lamda, eps_lamda, lamda_int)
-            lamda = pact_quantized_requantize(lamda/eps_lamda, eps_lamda, eps_kappa*self.eps_in) * eps_kappa*self.eps_in
+            lamda = pact_quantized_requantize(lamda, eps_lamda, eps_kappa*self.eps_in) * eps_kappa*self.eps_in
         out = kappa*x + lamda
         if self.statistics_only:
             with torch.no_grad():
@@ -1051,7 +1053,7 @@ class PACT_Conv2d(torch.nn.Conv2d):
 
         if self.quant_asymm:
             eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
-            self.weight.data = pact_quantize_asymm_inference(self.weight, eps, self.W_alpha, self.W_beta, train_loop=False) / eps
+            self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False) / eps
         else:
             eps = 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1)
             self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha) / eps
@@ -1111,7 +1113,8 @@ class PACT_Conv2d(torch.nn.Conv2d):
                 W_quant = pact_quantize_signed(self.weight, 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1), self.W_alpha)
         elif self.quantize_W and not self.deployment:
             if self.quant_asymm:
-                W_quant = pact_quantize_asymm_inference(self.weight, (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1), self.W_alpha, self.W_beta, train_loop=self.train_loop, train_loop_oldprec=self.train_loop_oldprec)
+                eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                W_quant = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=self.train_loop, train_loop_oldprec=self.train_loop_oldprec)
             else:
                 W_quant = pact_quantize_signed_inference(self.weight, 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1), self.W_alpha)
         else:
