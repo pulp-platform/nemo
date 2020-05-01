@@ -32,13 +32,14 @@ from torch.onnx.symbolic_helper import parse_args
 DEFAULT_ACT_REQNT_FACTOR = 256
 DEFAULT_ADD_REQNT_FACTOR = 256
 DEFAULT_POOL_REQNT_FACTOR = 256
+QD_REQUANT_DEBUG = False
 
 __all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 # requantization rounding can be excluded for debug purposes, e.g., to identify numerical
 # differences that are hidden by the requantization approximation
-def pact_quantized_requantize(t, eps_in, eps_out, D=1, exclude_requant_rounding=False):
+def pact_quantized_requantize(t, eps_in, eps_out, D=1, exclude_requant_rounding=QD_REQUANT_DEBUG):
     if exclude_requant_rounding:
         return torch.floor(t / eps_out)
     else:
@@ -216,7 +217,7 @@ class PACT_QuantFunc_Signed(torch.autograd.Function):
     :type  eps: `torch.Tensor` or float
     :param alpha: the value of :math:`\alpha`.
     :type  alpha: `torch.Tensor` or float
-    :param delta: constant to sum to `eps` for numerical stability (default 1e-9).
+    :param delta: constant to sum to `eps` for numerical stability (default 0, unused).
     :type  delta: `torch.Tensor` or float
     
     :return: The quantized weights tensor.
@@ -225,7 +226,7 @@ class PACT_QuantFunc_Signed(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, input, eps, alpha, delta=1e-9):
+    def forward(ctx, input, eps, alpha, delta=0):
         where_input_nonclipped = (input >= -alpha) * (input < alpha)
         where_input_gtalpha = (input >= alpha) + (input < -alpha)
         ctx.save_for_backward(where_input_nonclipped, where_input_gtalpha)
@@ -273,7 +274,7 @@ class PACT_QuantFunc_Asymm(torch.autograd.Function):
     :type  alpha: `torch.Tensor` or float
     :param beta: the value of :math:`\beta`.
     :type  beta: `torch.Tensor` or float
-    :param delta: constant to sum to `eps` for numerical stability (default 1e-9).
+    :param delta: constant to sum to `eps` for numerical stability (default unused, 0).
     :type  delta: `torch.Tensor` or float
     
     :return: The quantized weights tensor.
@@ -282,7 +283,7 @@ class PACT_QuantFunc_Asymm(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, input, eps, alpha, beta, delta=1e-9):
+    def forward(ctx, input, eps, alpha, beta, delta=0):
         # we quantize also alpha, beta. for beta it's "cosmetic", for alpha it is 
         # substantial, because also alpha will be represented as a wholly integer number
         # down the line
