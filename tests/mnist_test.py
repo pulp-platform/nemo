@@ -264,9 +264,7 @@ In the next cell, we bring our MNIST network to this representation, then we tes
 
 state_dict = torch.load('checkpoint/mnist_fq_mixed.pth')['state_dict']
 model.load_state_dict(state_dict, strict=True)
-model = nemo.transform.bn_quantizer(model)
-model.harden_weights()
-model.set_deployment(eps_in=1./255)
+model.qd_stage(eps_in=1./255)
 print(model)
 acc = test(model, device, test_loader)
 print("\nQuantizedDeployable @ mixed-precision accuracy: %.02f%%" % acc)
