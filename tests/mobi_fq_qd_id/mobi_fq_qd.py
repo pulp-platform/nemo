@@ -125,25 +125,19 @@ def main():
     weight_bits = int(args.weight_bits)
     activ_bits = int(args.activ_bits)
 
-    print("run arguments: %s", args)
+    print("run arguments: %s" % args)
 
     args.gpus = None
 
     # create model
-    print("creating model %s", args.model)
+    print("creating model %s" % args.model)
     model_config = {'input_size': args.input_size, 'dataset': args.dataset, 'num_classes': 1000, \
                     'width_mult': float(args.mobilenet_width), 'input_dim': float(args.mobilenet_input) }
 
-    if args.model_config is not '':
-        model_config = dict(model_config, **literal_eval(args.model_config))
-
     model = mobilenet(**model_config).to('cpu')
-    print("created model with configuration: %s", model_config)
+    print("created model with configuration: %s" % model_config)
     print(model)
 
-
-    num_parameters = sum([l.nelement() for l in model.parameters()])
-    print("number of parameters: %d", num_parameters)
 
     mobilenet_width = float(args.mobilenet_width)
     mobilenet_input = int(args.mobilenet_input) 
@@ -153,19 +147,20 @@ def main():
 
     checkpoint_file = args.resume
     if os.path.isfile(checkpoint_file):
-        print("loading checkpoint '%s'", args.resume)
+        print("loading checkpoint '%s'" % args.resume)
         checkpoint_loaded = torch.load(checkpoint_file, map_location=torch.device('cpu'))
         checkpoint = checkpoint_loaded['state_dict']
         model.load_state_dict(checkpoint, strict=True)
         prec_dict = checkpoint_loaded.get('precision')
     else:
-        print("no checkpoint found at '%s'", args.resume)
+        print("no checkpoint found at '%s'" % args.resume)
         import sys; sys.exit(1)
 
     print("[NEMO] Not calibrating model, as it is pretrained")
     model.change_precision(bits=1, min_prec_dict=prec_dict)
 
     inputs = torch.load("input_fq.pth", map_location=torch.device('cpu'))['in']
+    inputs = inputs[:8] # reduce input size for GitHub CI regression test
     bin_fq, bout_fq, _ = nemo.utils.get_intermediate_activations(model, forward, model, inputs)
 
     input_bias_dict  = {}# {'model.0.0' : +1.0, 'model.0.1' : +1.0}
@@ -181,7 +176,6 @@ def main():
     diff = collections.OrderedDict()
     for k in bout_fq.keys():
         diff[k] = (bout_fq[k] - bout_qd[k]).to('cpu').abs()
-    print(torch.get_default_dtype())
 
     for i in range(0,26):
         for j in range(3,4):

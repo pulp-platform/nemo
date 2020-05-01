@@ -42,5 +42,13 @@ jobs:
       run: |
         cd tests/mobi_fq_qd_id
         wget https://raw.githubusercontent.com/FrancescoConti/nemo_examples_helper/master/mobilenet_1.0_128_best.pth
+        wget https://raw.githubusercontent.com/FrancescoConti/nemo_examples_helper/master/input_fq.pth
         PYTHONPATH=`pwd`/../.. python mobi_fq_qd.py
+    - name: MobileNet QD-ID equivalence
+      run: |
+        cd tests/mobi_fq_qd_id
+        wget https://raw.githubusercontent.com/FrancescoConti/nemo_examples_helper/master/mobilenet_1.0_128_best.pth
+        wget https://raw.githubusercontent.com/FrancescoConti/nemo_examples_helper/master/input_fq.pth
+        wget https://raw.githubusercontent.com/FrancescoConti/nemo_examples_helper/master/mobi_qd_id_res.pth
+        PYTHONPATH=`pwd`/../.. python mobi_qd_id.py
 

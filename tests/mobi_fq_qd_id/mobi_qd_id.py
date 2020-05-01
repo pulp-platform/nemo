@@ -35,6 +35,9 @@ import collections
 #   --terminal \
 #   --resume checkpoint/mobilenet_1.0_128_best.pth
 
+SAVE_RESULTS = False
+TOL_RESULTS = 1.01
+
 # filter out ImageNet EXIF warnings
 warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
 warnings.filterwarnings("ignore", "Metadata Warning", UserWarning)
@@ -125,7 +128,7 @@ def main():
     weight_bits = int(args.weight_bits)
     activ_bits = int(args.activ_bits)
 
-    print("run arguments: %s", args)
+    print("run arguments: %s" % args)
 
     args.gpus = None
 
@@ -134,122 +137,101 @@ def main():
     model_config = {'input_size': args.input_size, 'dataset': args.dataset, 'num_classes': 1000, \
                     'width_mult': float(args.mobilenet_width), 'input_dim': float(args.mobilenet_input) }
 
-    if args.model_config is not '':
-        model_config = dict(model_config, **literal_eval(args.model_config))
+#    model_config = dict(model_config, **literal_eval(args.model_config))
 
-    model = mobilenet(**model_config).to('cuda')
-    print("created model with configuration: %s", model_config)
+    model = mobilenet(**model_config).to('cpu')
+    print("created model with configuration: %s" % model_config)
     print(model)
-
-
-    num_parameters = sum([l.nelement() for l in model.parameters()])
-    print("number of parameters: %d", num_parameters)
 
     mobilenet_width = float(args.mobilenet_width)
     mobilenet_input = int(args.mobilenet_input) 
 
     # transform the model in a NEMO FakeQuantized representation
-    model = nemo.transform.quantize_pact(model, dummy_input=torch.randn((1,3,mobilenet_input,mobilenet_input)).to('cuda'))
+    model = nemo.transform.quantize_pact(model, dummy_input=torch.randn((1,3,mobilenet_input,mobilenet_input)).to('cpu'))
 
     checkpoint_file = args.resume
     if os.path.isfile(checkpoint_file):
-        print("loading checkpoint '%s'", args.resume)
-        checkpoint_loaded = torch.load(checkpoint_file) #, map_location=torch.device('cuda'))
+        print("loading checkpoint '%s'" % args.resume)
+        checkpoint_loaded = torch.load(checkpoint_file, map_location=torch.device('cpu'))
         checkpoint = checkpoint_loaded['state_dict']
         model.load_state_dict(checkpoint, strict=True)
         prec_dict = checkpoint_loaded.get('precision')
     else:
-        print("no checkpoint found at '%s'", args.resume)
+        print("no checkpoint found at '%s'" % args.resume)
         import sys; sys.exit(1)
 
     print("[NEMO] Not calibrating model, as it is pretrained")
     model.change_precision(bits=1, min_prec_dict=prec_dict)
 
-    inputs = torch.load("input_fq.pth")['in'] # , map_location=torch.device('cuda'))['in']
+    inputs = torch.floor(torch.load("input_fq.pth", map_location=torch.device('cpu'))['in'] / (2./255)) * (2./255)
+    inputs = inputs[:8] # reduce input size for GitHub CI regression test
+
     bin_fq, bout_fq, _ = nemo.utils.get_intermediate_activations(model, forward, model, inputs)
 
-    input_bias_dict  = {}# {'model.0.0' : +1.0, 'model.0.1' : +1.0}
-    remove_bias_dict = {}#{'model.0.1' : 'model.0.2'}
-    input_bias       = 0 #math.floor(1.0 / (2./255)) * (2./255)
+    input_bias       = math.ceil(1.0 / (2./255)) * (2./255)
+    input_bias_dict  = {'model.0.0' : input_bias, 'model.0.1' : input_bias}
+    remove_bias_dict = {'model.0.1' : 'model.0.2'}
+    inputs += input_bias
 
-    model.qd_stage(eps_in=2./255, int_accurate=False)
+    model.qd_stage(eps_in=2./255, add_input_bias_dict=input_bias_dict, remove_bias_dict=remove_bias_dict, precision=nemo.precision.Precision(bits=20), int_accurate=True)
     # fix ConstantPad2d
-    # model.model[0][0].value = input_bias
+    model.model[0][0].value = input_bias
 
     bin_qd, bout_qd, _ = nemo.utils.get_intermediate_activations(model, forward, model, inputs, input_bias=input_bias)
+    qds = copy.deepcopy(model.state_dict())
+   
+    model.id_stage()
+    # fix ConstantPad2d
+    model.model[0][0].value = input_bias / (2./255)
+
+    inputs = inputs / (2./255)
+    ids = model.state_dict()
+    bin_id, bout_id, _ = nemo.utils.get_intermediate_activations(model, forward, model, inputs, input_bias=input_bias, eps_in=2./255) 
 
     diff = collections.OrderedDict()
-    for k in bout_fq.keys():
-        diff[k] = (bout_fq[k] - bout_qd[k]).to('cpu').abs()
-    print(torch.get_default_dtype())
-
+    if SAVE_RESULTS:
+        results = {
+          'mean_eps' : {},
+          'max_eps' : {},
+          'ratio' : {}
+        }
+    else:
+        results = torch.load("mobi_qd_id_res.pth")
     for i in range(0,26):
         for j in range(3,4):
             k  = 'model.%d.%d' % (i,j)
             kn = 'model.%d.%d' % (i if j<3 else i+1, j+1 if j<3 else 0)
             eps = model.get_eps_at(kn, eps_in=2./255)[0]
+            diff[k] = (bout_id[k]*eps - bout_qd[k]).to('cpu').abs()
             print("%s:" % k)
-            idx = diff[k]>eps
+            idx = diff[k]>=eps
             n = idx.sum()
             t = (diff[k]>-1e9).sum()
-            max_eps = torch.ceil(diff[k].max() / model.get_eps_at('model.%d.0' % (i+1), 2./255)[0]).item()
-            mean_eps = torch.ceil(diff[k][idx].mean() / model.get_eps_at('model.%d.0' % (i+1), 2./255)[0]).item()
-            assert(max_eps < 1)
+            max_eps  = torch.ceil(diff[k].max() / eps).item()
+            mean_eps = torch.ceil(diff[k][idx].mean() / eps).item()
             try:
                 print("  max:   %.3f (%d eps)" % (diff[k].max().item(), max_eps))
                 print("  mean:  %.3f (%d eps) (only diff. elements)" % (diff[k][idx].mean().item(), mean_eps))
                 print("  #diff: %d/%d (%.1f%%)" % (n, t, float(n)/float(t)*100)) 
             except ValueError:
                 print("  #diff: 0/%d (0%%)" % (t,)) 
-
-    # model.id_stage()
-    # # fix ConstantPad2d
-    # # model.model[0][0].value = input_bias / (2./255)
-
-    # ids = model.state_dict()
-    # bin_id, bout_id, _ = nemo.utils.get_intermediate_activations(model, validate, val_loader, model, criterion, 0, None, input_bias=input_bias, shorten=1, eps_in=2./255) 
-
-    # diff = collections.OrderedDict()
-    # for i in range(0,26):
-    #     for j in range(3,4):
-    #         k  = 'model.%d.%d' % (i,j)
-    #         kn = 'model.%d.%d' % (i if j<3 else i+1, j+1 if j<3 else 0)
-    #         eps = model.get_eps_at(kn, eps_in=2./255)[0]
-    #         diff[k] = (bout_id[k]*eps - bout_qd[k]).to('cpu').abs()
-    #         print("%s:" % k)
-    #         idx = diff[k]>=eps
-    #         n = idx.sum()
-    #         t = (diff[k]>-1e9).sum()
-    #         max_eps  = torch.ceil(diff[k].max() / eps).item()
-    #         mean_eps = torch.ceil(diff[k][idx].mean() / eps).item()
-    #         try:
-    #             print("  max:   %.3f (%d eps)" % (diff[k].max().item(), max_eps))
-    #             print("  mean:  %.3f (%d eps) (only diff. elements)" % (diff[k][idx].mean().item(), mean_eps))
-    #             print("  #diff: %d/%d (%.1f%%)" % (n, t, float(n)/float(t)*100)) 
-    #         except ValueError:
-    #             print("  #diff: 0/%d (0%%)" % (t,)) 
+            if SAVE_RESULTS:
+                results['mean_eps'][k] = mean_eps
+                results['max_eps'][k] = max_eps
+                results['ratio'][k] = float(n)/float(t)*100
+            assert(mean_eps <= results['mean_eps'][k] * TOL_RESULTS)
+            assert(max_eps  <= results['max_eps'][k]  * TOL_RESULTS)
+            assert(float(n)/float(t)*100 <= results['ratio'][k] * TOL_RESULTS)
+    if SAVE_RESULTS:
+        torch.save(results, "mobi_qd_id_res.pth")
 
 def forward(model, inputs, input_bias=0.0, eps_in=None, integer=False):
 
     model.eval()
 
-    # input quantization
-    if eps_in is None:
-        scale_factor = 1.
-        div_factor   = 1.
-    elif not integer:
-        scale_factor = 1./eps_in
-        div_factor   = 1./eps_in
-    else:
-        scale_factor = 1./eps_in
-        div_factor   = 1.
-
     # measure data loading time
     with torch.no_grad():
-        if eps_in is None:
-            input_var = (inputs + input_bias)
-        else:
-            input_var = (inputs + input_bias) * scale_factor
+        input_var = inputs
 
     # compute output
     output = model(input_var)
