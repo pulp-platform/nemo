@@ -29,9 +29,9 @@ import logging
 # Create custom symbolic function
 from torch.onnx.symbolic_helper import parse_args
 
-DEFAULT_ACT_REQNT_FACTOR = 256
-DEFAULT_ADD_REQNT_FACTOR = 256
-DEFAULT_POOL_REQNT_FACTOR = 256
+DEFAULT_ACT_REQNT_FACTOR  = 128
+DEFAULT_ADD_REQNT_FACTOR  = 128
+DEFAULT_POOL_REQNT_FACTOR = 128
 QD_REQUANT_DEBUG = False
 
 __all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
@@ -1009,6 +1009,8 @@ class PACT_Conv2d(torch.nn.Conv2d):
 
         self.padding_value = 0
         self.hardened = False
+        self.integerized = False
+        self.eps_out_static = None
 
     def reset_alpha_weights(self, use_max=True, nb_std=5., verbose=False, **kwargs):
         r"""Resets :math:`\alpha` and :math:`\beta` parameters for weights.
@@ -1040,7 +1042,7 @@ class PACT_Conv2d(torch.nn.Conv2d):
                 self.reset_alpha_weights()
                 eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
                 self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
-                self.reset_alpha_weights()
+                self.eps_static = eps
             else: 
                 eps = (2*self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
                 self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
@@ -1050,13 +1052,15 @@ class PACT_Conv2d(torch.nn.Conv2d):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
 
         """
-
-        if self.quant_asymm:
-            eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
-            self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False) / eps
-        else:
-            eps = 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1)
-            self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha) / eps
+      
+        if not self.integerized:
+            if self.quant_asymm:
+                eps = self.eps_static
+                self.weight.data = self.weight.data/self.eps_static
+            else:
+                eps = 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha) / eps
+            self.integerized = True
 
     def prune_weights(self, threshold=0.1, eps=2**-9.):
         r"""Prunes the weights of the layer.
@@ -1089,11 +1093,14 @@ class PACT_Conv2d(torch.nn.Conv2d):
 
         """
 
-        if self.quant_asymm:
-            eps_W = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
-        else:
-            eps_W = 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1)
-        return eps_W * eps_in
+        if self.eps_out_static is None:
+            if self.quant_asymm:
+                eps_W = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+            else:
+                eps_W = 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1)
+            self.eps_out_static = eps_W * eps_in
+        return self.eps_out_static
+
     def forward(self, input):
         r"""Forward-prop function for PACT-quantized 2d-convolution.
 
