@@ -36,9 +36,14 @@ DEFAULT_POOL_REQNT_FACTOR = 256
 __all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
-def pact_quantized_requantize(t, eps_in, eps_out, D=1):
-    eps_ratio = (D*eps_in/eps_out).round()
-    return t * eps_ratio / D
+# requantization rounding can be excluded for debug purposes, e.g., to identify numerical
+# differences that are hidden by the requantization approximation
+def pact_quantized_requantize(t, eps_in, eps_out, D=1, exclude_requant_rounding=False):
+    if exclude_requant_rounding:
+        return torch.floor(t / eps_out)
+    else:
+        eps_ratio = (D*eps_in/eps_out).round()
+        return torch.floor(t / eps_in * eps_ratio / D)
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 def pact_integer_requantize(t, eps_in, eps_out, D=1):
@@ -156,7 +161,7 @@ class PACT_QuantFunc(torch.autograd.Function):
     :type  eps: `torch.Tensor` or float
     :param alpha: the value of :math:`\alpha`.
     :type  alpha: `torch.Tensor` or float
-    :param delta: constant to sum to `eps` for numerical stability (default 1e-9).
+    :param delta: constant to sum to `eps` for numerical stability (default unused, 0 ).
     :type  delta: `torch.Tensor` or float
     
     :return: The quantized input activations tensor.
@@ -165,7 +170,7 @@ class PACT_QuantFunc(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, input, eps, alpha, delta=1e-9):
+    def forward(ctx, input, eps, alpha, delta=0):
         where_input_nonclipped = (input >= 0) * (input < alpha)
         where_input_gtalpha = (input >= alpha)
         ctx.save_for_backward(where_input_nonclipped, where_input_gtalpha)
@@ -356,8 +361,11 @@ class PACT_Act(torch.nn.Module):
         r"""Sets static parameters used only for deployment.
 
         """
-        self.eps_static   = self.alpha.item()/(2.0**(self.precision.get_bits())-1)
-        self.alpha_static = self.alpha.item()
+        # item() --> conversion to float
+        # apparently causes a slight, but not invisibile, numerical divergence
+        # between FQ and QD stages
+        self.eps_static   = self.alpha.clone().detach()/(2.0**(self.precision.get_bits())-1)
+        self.alpha_static = self.alpha.clone().detach()
         # D is selected as a power-of-two
         self.D = 2.0**torch.ceil(torch.log2(self.requantization_factor * self.eps_static / self.eps_in))
 
@@ -414,8 +422,8 @@ class PACT_Act(torch.nn.Module):
         """
 
         if self.deployment:
-            x_rq = pact_quantized_requantize(x/self.eps_in, self.eps_in, self.eps_static, self.D) * self.eps_static
-            return x_rq.clamp(0, self.alpha_static)
+            x_rq = pact_quantized_requantize(x, self.eps_in, self.eps_static, self.D) * self.eps_static
+            return x_rq.clamp(0, self.alpha_static.data[0] - self.eps_static.data[0])
             # return pact_quantize_deploy(x, self.eps_static, self.alpha_static)
         elif self.statistics_only:
             if self.leaky is None:
