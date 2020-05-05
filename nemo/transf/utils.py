@@ -142,7 +142,7 @@ def _get_clip_parameters_pact(self):
         if name[-5:] == 'alpha':
             yield param
 
-def _reset_alpha_weights_pact(self, **kwargs):
+def _reset_alpha_weights_pact(self, method='standard', **kwargs):
     r"""Resets parameter `W_alpha`.
     
     """

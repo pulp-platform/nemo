@@ -30,6 +30,7 @@ import math
 import torchvision.models
 import re
 from nemo.transf.common import *
+from sklearn import linear_model
 
 # Part of the procedure necessary for DFQ as described here https://arxiv.org/pdf/1906.04721.pdf            
 def _equalize_weights_dfq_pact(self, equalize_dict={}, act_dict={}, verbose=False, cost_eps=1e-3, max_iter=1000, reset_alpha=True):
@@ -111,7 +112,7 @@ def _equalize_weights_dfq_pact(self, equalize_dict={}, act_dict={}, verbose=Fals
         self.reset_alpha_weights()
 
 def _equalize_weights_unfolding_pact(self, bn_dict={}, verbose=False, eps=None):
-    r"""Performs cross-layer equalization by unfolding of convolution parameters
+    r"""Performs in-layer equalization by unfolding of convolution parameters
     into batch-normalization parameters.
     
     :param bn_dict: a dictionary of layer names, with the key being the source (linear) and the value the target (batch-norm).
@@ -152,3 +153,56 @@ def _equalize_weights_unfolding_pact(self, bn_dict={}, verbose=False, eps=None):
         m_after.weight.data[:] = m_after.weight.data[:] * reshape_after(m_after, range_before)
         if verbose:
             logging.info("[Equalization by Unfolding] %s: wrange_min=%.5f wrange_max=%.5f" % (n_before, weight_range(m_before, 0).min().item(), weight_range(m_before, 0).max().item()))
+
+def _equalize_weights_lsq_pact(self, bn_dict={}, verbose=False, eps=None):
+    r"""Performs in-layer equalization by unfolding of convolution parameters
+    into batch-normalization parameters.
+    
+    :param bn_dict: a dictionary of layer names, with the key being the source (linear) and the value the target (batch-norm).
+    :type  bn_dict: `dict` or `collections.OrderedDict`
+    :param verbose: if True, prints more information.
+    :type  verbose: bool
+    :param eps: if not None (the default), overrides numerical `eps` used within batch-norm layer.
+    :type  eps: float
+
+    """
+
+    if not bn_dict:
+        bn_dict = get_bn_dict_from_supernodes(self)
+
+    module_dict = {}
+    for n,m in self.named_modules():
+        if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_Conv1d" or \
+            m.__class__.__name__ == "PACT_Linear" or \
+            m.__class__.__name__ == "BatchNorm2d" or \
+            m.__class__.__name__ == "BatchNorm1d" ):
+            module_dict[n] = m
+    for n_before in bn_dict.keys():
+        n_after = bn_dict[n_before]
+        m_before = module_dict[n_before]
+        m_after  = module_dict[n_after]
+        if eps is None:
+            eps = m_after.eps
+        min_before = weight_min(m_before, 0).cpu().detach().numpy()
+        max_before = weight_max(m_before, 0).cpu().detach().numpy()
+        if verbose:
+            logging.info("[Equalization by Least Squares] %s: wrange_min=%.5f wrange_max=%.5f" % (n_before, weight_range(m_before, 0).min().item(), weight_range(m_before, 0).max().item()))
+        X = np.vstack((min_before, max_before))
+        y = np.asarray((-1,1))
+        coeff = torch.zeros(len(min_before), device=m_before.weight.device)
+        regr = linear_model.LinearRegression(fit_intercept=False)
+        for i in range(len(min_before)):
+            regr.fit(X[:,i].reshape((-1,1)), y)
+            coeff[i] = torch.as_tensor(regr.coef_[0], device=m_before.weight.device)
+        coeff = 1./coeff
+        m_before.weight.data[:] = m_before.weight.data[:] / reshape_before(m_before, coeff)
+        try:
+            m_before.bias.data[:] = m_before.bias.data[:] / coeff
+        except AttributeError:
+            pass
+        m_after.running_mean.data[:] = m_after.running_mean.data[:] / coeff
+        m_after.weight.data[:] = m_after.weight.data[:] * reshape_after(m_after, coeff)
+        if verbose:
+            logging.info("[Equalization by Least Squares] %s: wrange_min=%.5f wrange_max=%.5f" % (n_before, weight_range(m_before, 0).min().item(), weight_range(m_before, 0).max().item()))
+
