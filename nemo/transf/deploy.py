@@ -51,6 +51,20 @@ def _harden_weights_pact(self, **kwargs):
         if (m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
             m.harden_weights(**kwargs)
 
+def _round_weights_pact(self, **kwargs):
+    r"""Round all weights in the network adding 1/2 an eps.
+
+    """
+
+    for n,m in self.named_modules():
+        if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_Conv1d" or \
+            m.__class__.__name__ == "PACT_Linear"):
+            m.weight.data[:] += (m.W_beta.item()+m.W_alpha.item())/(2.0**(m.W_precision.get_bits())-1) / 2
+        if (m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
+            m.kappa.data[:] += m.eps_kappa/2
+            m.lamda.data[:] += m.eps_lamda/2
+
 def _set_deployment_pact(self, eps_in, only_activations=False, **kwargs):
     r"""Sets the network in deployment mode, enabling saving it to ONNX format or similar.
 
@@ -97,6 +111,7 @@ def _set_eps_in_pact(self, eps_in):
             m.eps_in_list = eps_in_list
 
 def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, prune_empty_bn=True, int_accurate=True, **kwargs):
+    self.round_weights()
     self.harden_weights()
     if prune_empty_bn:
         self.prune_empty_bn(threshold=1e-9)

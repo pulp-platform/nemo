@@ -93,11 +93,11 @@ def pact_quantize_asymm_inference(W, eps, alpha, beta, train_loop=True, train_lo
     # we choose small_eps = eps/2
     if not train_loop and train_loop_oldprec is not None:
         W_quant = W.clone().detach()
-        W_quant.data[:] = (W_quant.data[:] / train_loop_oldprec).floor()*train_loop_oldprec + eps/2
+        W_quant.data[:] = (W_quant.data[:] / train_loop_oldprec).floor()*train_loop_oldprec + eps*0.5
     elif not train_loop:
-        W_quant = W.clone().detach() + eps/2
+        W_quant = W.clone().detach() + eps*0.5
     else:
-        W_quant = W.clone().detach()
+        W_quant = W.clone().detach() + eps*0.5
     W_quant.data[:] = (W_quant.data[:] / eps).floor()*eps
     # alpha, beta are also represented with quantized numbers
     alpha = torch.ceil(alpha/eps)*eps
@@ -293,7 +293,7 @@ class PACT_QuantFunc_Asymm(torch.autograd.Function):
         where_input_ltalpha = (input < -alpha_quant)
         where_input_gtbeta = (input >= beta_quant)
         ctx.save_for_backward(where_input_nonclipped, where_input_ltalpha, where_input_gtbeta)
-        return (input.clamp(-alpha_quant.item(), beta_quant.item()) / (eps+delta)).floor() * eps
+        return (input.clamp(-alpha_quant.item(), beta_quant.item()) / (eps+delta)).round() * eps
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -302,7 +302,7 @@ class PACT_QuantFunc_Asymm(torch.autograd.Function):
         zero = torch.zeros(1).to(where_input_nonclipped.device)
         grad_input = torch.where(where_input_nonclipped, grad_output, zero)
         grad_alpha = torch.where(where_input_ltalpha, grad_output, zero).sum().expand(1)
-        grad_beta = torch.where(where_input_gtbeta, grad_output, zero).sum().expand(1)
+        grad_beta  = torch.where(where_input_gtbeta, grad_output, zero).sum().expand(1)
         return grad_input, None, grad_alpha, grad_beta
 
 pact_quantize_asymm = PACT_QuantFunc_Asymm.apply
