@@ -127,6 +127,7 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=F
     module.unset_train_loop            = types.MethodType(nemo.transf.utils._unset_train_loop_pact, module)
     module.prune_weights               = types.MethodType(nemo.transf.pruning._prune_weights_pact, module)
     module.equalize_weights_dfq        = types.MethodType(nemo.transf.equalize._equalize_weights_dfq_pact, module)
+    module.equalize_weights_lsq        = types.MethodType(nemo.transf.equalize._equalize_weights_lsq_pact, module)
     module.equalize_weights_unfolding  = types.MethodType(nemo.transf.equalize._equalize_weights_unfolding_pact, module)
     module.statistics_act              = types.MethodType(nemo.transf.statistics._statistics_act_pact, module)
     module.set_statistics_act          = types.MethodType(nemo.transf.statistics._set_statistics_act_pact, module)

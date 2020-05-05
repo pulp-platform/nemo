@@ -832,7 +832,9 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
                 lamda_int = torch.floor(lamda_int / eps_lamda) * eps_lamda
             kappa = pact_quantize_signed_inference(kappa, eps_kappa, kappa_int)
             lamda = pact_quantize_signed_inference(lamda, eps_lamda, lamda_int)
-            lamda = pact_quantized_requantize(lamda, eps_lamda, eps_kappa*self.eps_in) * eps_kappa*self.eps_in
+            # at FQ stage, self.eps_in is None
+            if self.eps_in is not None:
+                lamda = pact_quantized_requantize(lamda, eps_lamda, eps_kappa*self.eps_in) * eps_kappa*self.eps_in
         out = kappa*x + lamda
         if self.statistics_only:
             with torch.no_grad():
@@ -1012,22 +1014,42 @@ class PACT_Conv2d(torch.nn.Conv2d):
         self.integerized = False
         self.eps_out_static = None
 
-    def reset_alpha_weights(self, use_max=True, nb_std=5., verbose=False, **kwargs):
+    def reset_alpha_weights(self, use_method='max', nb_std=5., verbose=False, dyn_range_bins=1024, dyn_range_cutoff=0., **kwargs):
         r"""Resets :math:`\alpha` and :math:`\beta` parameters for weights.
 
         """
 
         if not self.quant_asymm:
             self.W_alpha.data[0] = self.weight.data.abs().max()
-        elif use_max:
+        elif use_method=='max':
             self.W_alpha.data[0] = -self.weight.data.min()
             self.W_beta.data [0] =  self.weight.data.max()
-        else:
+        elif use_method=='std':
             self.W_alpha.data[0] = -self.weight.data.mean() + nb_std*self.weight.data.std()
             self.W_beta.data[0]  =  self.weight.data.mean() + nb_std*self.weight.data.std()
+        elif use_method=='dyn_range':
+            import scipy.stats
+            alpha_n = self.weight.data.min()
+            beta    = self.weight.data.max()
+            x = np.linspace(alpha_n.cpu().detach().numpy(), beta.cpu().detach().numpy(), dyn_range_bins)
+            res = scipy.stats.cumfreq(self.weight.data.cpu().detach().numpy(), dyn_range_bins, defaultreallimits=(alpha_n.cpu().detach().numpy(), beta.cpu().detach().numpy()))
+            yh = res.cumcount / res.cumcount[-1]
+            if not (yh<dyn_range_cutoff).any() and not (yh>1-dyn_range_cutoff).any():
+                self.W_alpha.data[0] = torch.as_tensor(-x.min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x.max(), device=self.W_beta.data.device)
+            elif not (yh<dyn_range_cutoff).any():
+                self.W_alpha.data[0] = torch.as_tensor(-x[yh>1-dyn_range_cutoff].min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x.max(), device=self.W_beta.data.device)
+            elif not (yh>1-dyn_range_cutoff).any():
+                self.W_alpha.data[0] = torch.as_tensor(-x.min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x[yh<dyn_range_cutoff].max(), device=self.W_beta.data.device)
+            else:
+                self.W_alpha.data[0] = torch.as_tensor(-x[yh>1-dyn_range_cutoff].min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x[yh<dyn_range_cutoff].max(), device=self.W_beta.data.device)
+
         if verbose:
-            logging.info("[Quant] W_alpha = %.5f" % self.W_alpha.data[0])
-            logging.info("[Quant] W_beta  = %.5f" % self.W_beta.data[0])
+            logging.info("[Quant] W_alpha = %.5f vs W_min = %.5f" % (self.W_alpha.data[0], self.weight.min()))
+            logging.info("[Quant] W_beta  = %.5f vs W_max = %.5f" % (self.W_beta.data[0], self.weight.max()))
 
     def harden_weights(self):
         r"""Replaces the current value of weight tensors (full-precision, quantized on forward-prop) with the quantized value.

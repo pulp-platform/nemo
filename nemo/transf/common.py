@@ -30,7 +30,7 @@ import math
 import torchvision.models
 import re
 
-__all__ = [ "reshape_before", "reshape_after", "weight_range", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes", "get_equalize_dict_from_supernodes" ]
+__all__ = [ "reshape_before", "reshape_after", "weight_range", "weight_min", "weight_max", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes", "get_equalize_dict_from_supernodes" ]
 
 def reshape_before(m, s):
     if   m.__class__.__name__ == "PACT_Conv2d":
@@ -55,6 +55,30 @@ def reshape_after(m, s):
         return s.reshape((1,s.shape[0]))
     else:
         return s
+
+def weight_max(m, range_idx):
+    if   m.__class__.__name__ == "PACT_Conv2d":
+        if m.groups == m.weight.shape[0]:
+            range_idx = 0 # for DW-conv, always marginalize idx 1
+        return m.weight.max(3)[0].max(2)[0].max(1-range_idx)[0] 
+    elif m.__class__.__name__ == "PACT_Conv1d":
+        return m.weight.max(2)[0].max(1-range_idx)[0]
+    elif m.__class__.__name__ == "PACT_Linear":
+        return m.weight.max(1-range_idx)[0]
+    elif m.__class__.__name__ == "BatchNorm1d" or m.__class__.__name__ == "BatchNorm2d":
+        return m.weight.data.abs()
+
+def weight_min(m, range_idx):
+    if   m.__class__.__name__ == "PACT_Conv2d":
+        if m.groups == m.weight.shape[0]:
+            range_idx = 0 # for DW-conv, always marginalize idx 1
+        return m.weight.min(3)[0].min(2)[0].min(1-range_idx)[0]
+    elif m.__class__.__name__ == "PACT_Conv1d":
+        return m.weight.min(2)[0].min(1-range_idx)[0]
+    elif m.__class__.__name__ == "PACT_Linear":
+        return m.weight.min(1-range_idx)[0]
+    elif m.__class__.__name__ == "BatchNorm1d" or m.__class__.__name__ == "BatchNorm2d":
+        return m.weight.data.abs()
 
 def weight_range(m, range_idx, symmetric=False):
     if   m.__class__.__name__ == "PACT_Conv2d":
