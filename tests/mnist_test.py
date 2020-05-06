@@ -249,7 +249,7 @@ model.unset_statistics_act()
 model.reset_alpha_act()
 acc = test(model, device, test_loader)
 print("\nFakeQuantized @ mixed-precision (folded+equalized) accuracy: %.02f%%" % acc)
-assert acc >= 99.0
+assert acc >= 98.8
 
 """Now we go back one step, reloading the state from the saved checkpoint (before folding) to show the "standard" deployment strategy that we use, based on Integer Batch-Norm (Rusci et al., https://arxiv.org/abs/1905.13082). 
 This is organized in two steps: first, we replace all `BatchNorm2d` in the network into a special quantized form, which is equivalent to freezing their parameters and transforms them, essentially, in channel-wise affine transforms. Then, we harden weights in their current quantum representation. Finally, we use the `set_deployment` method to bring the network to the ***QuantizedDeployable*** stage.
