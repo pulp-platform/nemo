@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pytorch-nemo",
-    version="0.0.4",
+    version="0.0.5",
     author="Francesco Conti",
     author_email="f.conti@unibo.it",
     description="NEural Minimizer for pytOrch",
@@ -24,6 +24,7 @@ setuptools.setup(
         "torchvision>=0.4.1",
         "numpy",
         "tqdm",
-        "packaging"
+        "packaging",
+        "scikit-learn"
     ]
 )
