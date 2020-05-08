@@ -875,10 +875,12 @@ class PACT_IntegerBatchNormNd(torch.nn.Module):
 
         """
 
-        # kappa_int = self.kappa.abs().max()
-        # lamda_int = self.lamda.abs().max()
-        self.kappa.data[:] = self.kappa / self.eps_kappa #torch.round(pact_quantize_signed_inference(self.kappa.data[:], self.eps_kappa, kappa_int) / self.eps_kappa)
-        self.lamda.data[:] = self.lamda / self.eps_lamda #torch.round(pact_quantize_signed_inference(self.lamda.data[:], self.eps_lamda, lamda_int) / self.eps_lamda)
+        self.kappa.data[:] = self.kappa / self.eps_kappa
+        self.lamda.data[:] = self.lamda / self.eps_lamda
+
+        # requantize lamda to eps_kappa*eps_in (which is the output precision)
+        self.lamda.data[:] = pact_integer_requantize(self.lamda, self.eps_lamda, self.eps_kappa*self.eps_in)
+
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -913,9 +915,7 @@ class PACT_IntegerBatchNormNd(torch.nn.Module):
 
         """
 
-        # requantize lamda to eps_kappa*eps_in (which is the output precision)
-        lamda_rq = pact_integer_requantize(self.lamda, self.eps_lamda, self.eps_kappa*self.eps_in)
-        return self.kappa*x + lamda_rq
+        return self.kappa*x + self.lamda
 
 class PACT_Identity(torch.nn.Module):
     r"""Identity module.
