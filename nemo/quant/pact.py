@@ -424,7 +424,7 @@ class PACT_Act(torch.nn.Module):
 
         if self.deployment:
             x_rq = pact_quantized_requantize(x, self.eps_in, self.eps_static, self.D, exclude_requant_rounding=self.precise) * self.eps_static
-            return x_rq.clamp(0, self.alpha_static.data[0] - self.eps_static.data[0])
+            return x_rq.clamp(0, self.alpha_static.data[0])
         elif self.statistics_only:
             if self.leaky is None:
                 x = torch.nn.functional.relu(x)
@@ -438,7 +438,7 @@ class PACT_Act(torch.nn.Module):
             return x
         else:
             eps = self.alpha/(2.0**(self.precision.get_bits())-1)
-            return pact_quantize(x, eps, self.alpha)
+            return pact_quantize(x, eps, self.alpha + eps)
 
 class PACT_IntegerAdd(torch.nn.Module):
     r"""PACT (PArametrized Clipping acTivation) activation for integer images.
