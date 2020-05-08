@@ -111,10 +111,10 @@ def _set_eps_in_pact(self, eps_in):
             m.eps_in_list = eps_in_list
 
 def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, prune_empty_bn=True, int_accurate=True, **kwargs):
-    self.round_weights()
-    self.harden_weights()
     if prune_empty_bn:
         self.prune_empty_bn(threshold=1e-9)
+    self.round_weights()
+    self.harden_weights()
     if add_input_bias_dict:
         self.add_input_bias(add_input_bias_dict)
     if remove_bias_dict:
