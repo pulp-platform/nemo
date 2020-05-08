@@ -81,7 +81,7 @@ def pact_quantize_deploy(W, eps, clip):
 # PACT signed quantization for inference (workaround for pact_quantize_signed not functional in inference)
 def pact_quantize_signed_inference(W, eps, clip):
     W_quant = W.clone().detach()
-    W_quant.data[:] = (W_quant.data[:] / eps).floor()*eps
+    W_quant.data[:] = (W_quant.data[:] / eps).round()*eps
     W_quant.clamp_(-clip.item(), clip.item())
     return W_quant
 
@@ -94,8 +94,6 @@ def pact_quantize_asymm_inference(W, eps, alpha, beta, train_loop=True, train_lo
     if not train_loop and train_loop_oldprec is not None:
         W_quant = W.clone().detach()
         W_quant.data[:] = (W_quant.data[:] / train_loop_oldprec).floor()*train_loop_oldprec + eps*0.5
-    elif not train_loop:
-        W_quant = W.clone().detach() + eps*0.5
     else:
         W_quant = W.clone().detach() + eps*0.5
     W_quant.data[:] = (W_quant.data[:] / eps).floor()*eps
@@ -1061,7 +1059,6 @@ class PACT_Conv2d(torch.nn.Conv2d):
             # in this way, the ID version will be able to use only an integer displacement or none at all if
             # symmetric weights are used
             if self.quant_asymm:
-                self.reset_alpha_weights()
                 eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
                 self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
                 self.eps_static = eps
