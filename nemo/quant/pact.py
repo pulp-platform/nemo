@@ -1044,6 +1044,12 @@ class PACT_Conv2d(torch.nn.Conv2d):
             else:
                 self.W_alpha.data[0] = torch.as_tensor(-x[yh>1-dyn_range_cutoff].min(), device=self.W_alpha.data.device)
                 self.W_beta.data[0]  = torch.as_tensor(x[yh<dyn_range_cutoff].max(), device=self.W_beta.data.device)
+            if self.W_alpha < 0:
+                self.W_alpha.data[:] = -self.W_alpha.data[:]
+            if self.W_beta < 0:
+                self.W_beta.data[:] = -self.W_beta.data[:]
+            assert (self.W_alpha >= 0).all()
+            assert (self.W_beta >= 0).all()
 
         if verbose:
             logging.info("[Quant] W_alpha = %.5f vs W_min = %.5f" % (self.W_alpha.data[0], self.weight.min()))
