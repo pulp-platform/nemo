@@ -45,7 +45,7 @@ def _prime_affine_bn(self):
             m.weight.data[:] = m.weight.data[:] * torch.sqrt(m.running_var.data[:] + m.eps)
             m.bias.data[:] = m.bias.data[:] + m.weight.data[:] * m.running_mean.data[:] / torch.sqrt(m.running_var.data[:] + m.eps)
 
-def _freeze_bn(self, reset_stats=False):
+def _freeze_bn(self, reset_stats=False, disable_grad=False):
     r"""Sets :py:class:torch.nn.BatchNorm2d` layers to not collect statistics and keep the current `running_var` and `running_mean`.
     
     """
@@ -69,6 +69,9 @@ def _freeze_bn(self, reset_stats=False):
                 m.running_mean[:] = 0.
             m.track_running_stats = True
             m.eval()
+            if disable_grad:
+                m.weight.requires_grad = False
+                m.bias.requires_grad = False
 
 def _unfreeze_bn(self):
     r"""Sets :py:class:torch.nn.BatchNorm2d` layers to collect statistics and update `running_var` and `running_mean`.
