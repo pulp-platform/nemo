@@ -29,9 +29,10 @@ import logging
 # Create custom symbolic function
 from torch.onnx.symbolic_helper import parse_args
 
-DEFAULT_ACT_REQNT_FACTOR  = 128
-DEFAULT_ADD_REQNT_FACTOR  = 128
-DEFAULT_POOL_REQNT_FACTOR = 128
+DEFAULT_ACT_REQNT_FACTOR  = 32
+DEFAULT_ADD_REQNT_FACTOR  = 32
+DEFAULT_POOL_REQNT_FACTOR = 32
+DEFAULT_QBATCHNORM_PREC = 12
 QD_REQUANT_DEBUG = False
 
 __all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
@@ -555,14 +556,18 @@ class PACT_IntegerAct(torch.nn.Module):
         self.eps_in = eps_in
         self.requantization_factor = requantization_factor
 
-    def set_output_eps(self):
+    def set_output_eps(self, limit_at_32_bits=True):
         r"""Sets static parameters used only for deployment.
 
         """
         self.eps_out   = self.alpha.item()/(2.0**(self.precision.get_bits())-1)
         self.alpha_out = 2.0**(self.precision.get_bits())-1
         # D is selected as a power-of-two
-        self.D = 2.0**torch.ceil(torch.log2(self.requantization_factor * self.eps_out / self.eps_in))
+        D = 2.0**torch.ceil(torch.log2(self.requantization_factor * self.eps_out / self.eps_in))
+        if not limit_at_32_bits:
+            self.D = D
+        else:
+            self.D = 2.0**(32-(self.precision.get_bits()))
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -693,8 +698,8 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
 
         super(PACT_QuantizedBatchNormNd, self).__init__()
         if precision is None:
-            self.precision_kappa = Precision(bits=16)
-            self.precision_lamda = Precision(bits=16)
+            self.precision_kappa = Precision(bits=DEFAULT_QBATCHNORM_PREC)
+            self.precision_lamda = Precision(bits=DEFAULT_QBATCHNORM_PREC)
         else:
             self.precision_kappa = precision
             self.precision_lamda = precision
