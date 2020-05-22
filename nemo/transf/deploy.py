@@ -85,7 +85,7 @@ def _set_deployment_pact(self, eps_in, only_activations=False, **kwargs):
                                       m.__class__.__name__ == "PACT_Act"):
             m.deployment = True
         if (m.__class__.__name__ == "PACT_Act"):
-            m.set_static_precision()
+            m.set_static_precision(**kwargs)
 
 def _set_eps_in_pact(self, eps_in):
     r"""Sets the input precision quantum of the network.
@@ -127,7 +127,7 @@ def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, pr
         for n,m in self.named_modules():
             if (m.__class__.__name__ == "PACT_Act"):
                 m.precise = True
-    self.set_deployment(eps_in=eps_in)
+    self.set_deployment(eps_in=eps_in, **kwargs)
 
 def _id_stage(self, eps_in=None, **kwargs):
     if self.stage == 'fq':
@@ -135,5 +135,5 @@ def _id_stage(self, eps_in=None, **kwargs):
     self.stage = 'id'
     if eps_in is None:
         eps_in = self.eps_in
-    nemo.transform.integerize_pact(self, eps_in=eps_in)
+    nemo.transform.integerize_pact(self, eps_in=eps_in, **kwargs)
 

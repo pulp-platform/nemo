@@ -359,7 +359,7 @@ class PACT_Act(torch.nn.Module):
 
         self.precise = False
 
-    def set_static_precision(self):
+    def set_static_precision(self, limit_at_32_bits=True, **kwargs):
         r"""Sets static parameters used only for deployment.
 
         """
@@ -369,7 +369,11 @@ class PACT_Act(torch.nn.Module):
         self.eps_static   = self.alpha.clone().detach()/(2.0**(self.precision.get_bits())-1)
         self.alpha_static = self.alpha.clone().detach()
         # D is selected as a power-of-two
-        self.D = 2.0**torch.ceil(torch.log2(self.requantization_factor * self.eps_static / self.eps_in))
+        D = 2.0**torch.ceil(torch.log2(self.requantization_factor * self.eps_static / self.eps_in))
+        if not limit_at_32_bits:
+            self.D = D
+        else:
+            self.D = 2.0**(32-(self.precision.get_bits()))
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -533,7 +537,7 @@ class PACT_IntegerAct(torch.nn.Module):
 
     """
 
-    def __init__(self, eps_in, alpha=1., precision=None, requantization_factor=DEFAULT_ACT_REQNT_FACTOR):
+    def __init__(self, eps_in, alpha=1., precision=None, requantization_factor=DEFAULT_ACT_REQNT_FACTOR, **kwargs):
         r"""Constructor. Initializes a :py:class:`torch.nn.Parameter` for :math:`\alpha`.
 
         :param precision: instance defining the current quantization level (default `None`).
@@ -556,7 +560,7 @@ class PACT_IntegerAct(torch.nn.Module):
         self.eps_in = eps_in
         self.requantization_factor = requantization_factor
 
-    def set_output_eps(self, limit_at_32_bits=True):
+    def set_output_eps(self, limit_at_32_bits=True, **kwargs):
         r"""Sets static parameters used only for deployment.
 
         """
@@ -678,7 +682,7 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
 
     """
 
-    def __init__(self, precision=None, kappa=None, lamda=None, nb_channels=1, statistics_only=False, dimensions=2):
+    def __init__(self, precision=None, kappa=None, lamda=None, nb_channels=1, statistics_only=False, dimensions=2, **kwargs):
         r"""Constructor.
 
         :param precision: instance defining the current quantization level (default `None`).
@@ -875,7 +879,7 @@ class PACT_IntegerBatchNormNd(torch.nn.Module):
         self.eps_lamda = eps_lamda
         self.eps_in = eps_in
         
-    def integerize_weights(self):
+    def integerize_weights(self, **kwargs):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
 
         """
@@ -1078,7 +1082,7 @@ class PACT_Conv2d(torch.nn.Conv2d):
                 self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
             self.hardened = True
 
-    def integerize_weights(self):
+    def integerize_weights(self, **kwargs):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
 
         """
@@ -1282,7 +1286,7 @@ class PACT_Conv1d(torch.nn.Conv1d):
                 self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
             self.hardened = True
 
-    def integerize_weights(self):
+    def integerize_weights(self, **kwargs):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
 
         """
@@ -1431,7 +1435,7 @@ class PACT_Linear(torch.nn.Linear):
                 self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
             self.hardened = True
 
-    def integerize_weights(self):
+    def integerize_weights(self, **kwargs):
         r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
 
         """

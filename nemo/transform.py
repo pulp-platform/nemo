@@ -41,7 +41,7 @@ from nemo.transf.pruning import *
 from nemo.transf.statistics import *
 from nemo.transf.utils import *
 
-def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=False):
+def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=False, **kwargs):
     r"""Takes a PyTorch module and makes it quantization-aware with PACT, recursively.
 
     The function follows recursively the data structures containing PyTorch layers (typically as hierarchical lists, e.g.
@@ -95,7 +95,7 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=F
     else:
         module.graph = None
     module.stage = 'fq'
-    module = _hier_quantizer_pact(module, module.graph)
+    module = _hier_quantizer_pact(module, module.graph, **kwargs)
     if hasattr(module, 'graph'):
         if module.graph is not None:
             module.graph.rebuild_module_dict()
@@ -203,13 +203,13 @@ def _hier_integerizer(module, **kwargs):
         module = PACT_IntegerBatchNormNd(kappa=module.kappa, lamda=module.lamda, eps_in=module.eps_in, eps_kappa=module.eps_kappa, eps_lamda=module.eps_lamda)
         module.integerize_weights(**kwargs)
     elif (module.__class__.__name__ == "PACT_Act"):
-        module = PACT_IntegerAct(precision=module.precision, eps_in=module.eps_in, alpha=module.alpha)
-        module.set_output_eps()
+        module = PACT_IntegerAct(precision=module.precision, eps_in=module.eps_in, alpha=module.alpha, **kwargs)
+        module.set_output_eps(**kwargs)
     elif (module.__class__.__name__ == "PACT_IntegerAdd"):
         module.integerized = True
     elif (module.__class__.__name__ == "AvgPool2d"):
         module = PACT_IntegerAvgPool2d(module.kernel_size, stride=module.stride, padding=module.padding, ceil_mode=module.ceil_mode,
-            count_include_pad=module.count_include_pad, requantization_factor=16)
+            count_include_pad=module.count_include_pad)
     else:
         for n,m in module.named_children():
             module._modules[n] = _hier_integerizer(m, **kwargs)
@@ -224,7 +224,7 @@ def _hier_thresholdizer_pact(module):
             module._modules[n] = _hier_thresholdizer_pact(m)
         return module
 
-def _hier_quantizer_pact(module, graph=None):
+def _hier_quantizer_pact(module, graph=None, **kwargs):
     if module.__class__.__name__ == 'Conv2d':
         W = module.weight.data
         try:
@@ -281,17 +281,17 @@ def _hier_quantizer_pact(module, graph=None):
             module.bias.data = b.clone()
         return module
     elif module.__class__.__name__ == 'ReLU6':
-        module = PACT_Act(alpha=6.)
+        module = PACT_Act(alpha=6., **kwargs)
         return module
     elif module.__class__.__name__ == 'ReLU':
-        module = PACT_Act()
+        module = PACT_Act(**kwargs)
         return module
     elif module.__class__.__name__ == 'LeakyReLU':
-        module = PACT_Act(leaky=module.negative_slope)
+        module = PACT_Act(leaky=module.negative_slope, **kwargs)
         return module
     else:
         for n,m in module.named_children():
-            module._modules[n] = _hier_quantizer_pact(m)
+            module._modules[n] = _hier_quantizer_pact(m, **kwargs)
         return module
 
 def _hier_dequantizer_pact(module):
