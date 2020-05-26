@@ -30,7 +30,7 @@ import math
 import torchvision.models
 import re
 
-__all__ = [ "reshape_before", "reshape_after", "weight_range", "weight_min", "weight_max", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes", "get_equalize_dict_from_supernodes" ]
+__all__ = [ "reshape_before", "reshape_after", "weight_range", "weight_min", "weight_max", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes", "get_equalize_dict_from_supernodes", "get_calib_dict_from_supernodes" ]
 
 def reshape_before(m, s):
     if   m.__class__.__name__ == "PACT_Conv2d":
@@ -146,7 +146,7 @@ def get_bn_dict_from_supernodes(net):
                isinstance(n[1], PACT_Linear):
                 lin.append(n[0])
         if len(lin) > 1 or len(bn) > 1:
-            print("[Error] Supernode analysis identified multiple BN or LIN layers when tring to fold! Aborting folding...")
+            print("[Error] Supernode analysis identified multiple BN or LIN layers in supernode")
             print(lin, bn)
             return
         try:
@@ -154,4 +154,26 @@ def get_bn_dict_from_supernodes(net):
         except IndexError:
             pass
     return bn_dict
+
+def get_calib_dict_from_supernodes(net):
+    calib_dict = OrderedDict()
+    # check all supernodes for BN and ACT layers
+    for k,ssn in net.graph.get_supernodes().items():
+        bn = []
+        sn = ssn['supernode']
+        prev = ssn['previous']
+        for n in sn:
+            if isinstance(n[1], torch.nn.BatchNorm2d) or \
+               isinstance(n[1], torch.nn.BatchNorm1d) or \
+               isinstance(n[1], PACT_QuantizedBatchNormNd):
+                bn.append(n[0])
+        if len(bn) > 1:
+            print("[Error] Supernode analysis identified multiple BN layers in supernode")
+            print(bn)
+            return
+        try:
+            calib_dict[bn[0]] = k
+        except IndexError:
+            pass
+    return calib_dict
 

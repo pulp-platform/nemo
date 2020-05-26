@@ -78,13 +78,9 @@ def pact_quantize_deploy(W, eps, clip):
     W = W.clamp(0, clip)
     return W
 
-# DEPRECATED
 # PACT signed quantization for inference (workaround for pact_quantize_signed not functional in inference)
 def pact_quantize_signed_inference(W, eps, clip):
-    W_quant = W.clone().detach()
-    W_quant.data[:] = (W_quant.data[:] / eps).round()*eps
-    W_quant.clamp_(-clip.item(), clip.item())
-    return W_quant
+    return pact_quantize_asymm_inference(W, torch.as_tensor(eps), torch.as_tensor(clip), torch.as_tensor(clip))
 
 # PACT asymmetric quantization for inference (workaround for pact_quantize_asymm not functional in inference)
 def pact_quantize_asymm_inference(W, eps, alpha, beta, train_loop=True, train_loop_oldprec=None):
@@ -341,7 +337,7 @@ class PACT_Act(torch.nn.Module):
         if precision is None:
             self.precision = Precision()
         else:
-            self.precision = precision
+            self.precision = Precision(bits=precision.get_bits())
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.alpha = torch.nn.Parameter(torch.Tensor((alpha,)).to(device), requires_grad=backprop_alpha)
         self.alpha_p = alpha
@@ -373,7 +369,7 @@ class PACT_Act(torch.nn.Module):
         if not limit_at_32_bits:
             self.D = D
         else:
-            self.D = 2.0**(32-(self.precision.get_bits()))
+            self.D = 2.0**(32-1-(self.precision.get_bits()))
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -468,7 +464,7 @@ class PACT_IntegerAdd(torch.nn.Module):
         if precision is None:
             self.precision = Precision(bits=8)
         else:
-            self.precision = precision
+            self.precision = Precision(bits=precision.get_bits())
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.requantization_factor = requantization_factor
@@ -537,13 +533,17 @@ class PACT_IntegerAct(torch.nn.Module):
 
     """
 
-    def __init__(self, eps_in, alpha=1., precision=None, requantization_factor=DEFAULT_ACT_REQNT_FACTOR, **kwargs):
+    def __init__(self, eps_in, eps_out, alpha=1., precision=None, requantization_factor=DEFAULT_ACT_REQNT_FACTOR, **kwargs):
         r"""Constructor. Initializes a :py:class:`torch.nn.Parameter` for :math:`\alpha`.
 
-        :param precision: instance defining the current quantization level (default `None`).
-        :type  precision: :py:class:`nemo.precision.Precision`
+        :param eps_in: input quantum.
+        :type  eps_in: `torch.Tensor` or float
+        :param eps_out: output quantum.
+        :type  eps_out: `torch.Tensor` or float
         :param alpha: the value of :math:`\alpha`.
         :type  alpha: `torch.Tensor` or float
+        :param precision: instance defining the current quantization level (default `None`).
+        :type  precision: :py:class:`nemo.precision.Precision`
         :param requantization_factor: minimum target ratio in requantization fraction (default 32).
         :type  requantization_factor: int
 
@@ -552,19 +552,23 @@ class PACT_IntegerAct(torch.nn.Module):
         if precision is None:
             self.precision = Precision(bits=16)
         else:
-            self.precision = precision
+            self.precision = Precision(bits=precision.get_bits())
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.alpha = torch.nn.Parameter(alpha)
 
         self.eps_in = eps_in
+        self.eps_out = eps_out
         self.requantization_factor = requantization_factor
 
     def set_output_eps(self, limit_at_32_bits=True, **kwargs):
-        r"""Sets static parameters used only for deployment.
+        r"""Sets static parameters used in deployment mode.
+
+        :param limit_at_32_bits: If True (default), define divider D so that a 32-bit accumulator can be used.
+        :type  limit_at_32_bits: bool
 
         """
-        self.eps_out   = self.alpha.item()/(2.0**(self.precision.get_bits())-1)
+        # self.eps_out   = self.alpha.item()/(2.0**(self.precision.get_bits())-1)
         self.alpha_out = 2.0**(self.precision.get_bits())-1
         # D is selected as a power-of-two
         D = 2.0**torch.ceil(torch.log2(self.requantization_factor * self.eps_out / self.eps_in))
@@ -643,7 +647,7 @@ class PACT_ThresholdAct(torch.nn.Module):
         if precision is None:
             self.precision = Precision()
         else:
-            self.precision = precision
+            self.precision = Precision(bits=precision.get_bits())
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.alpha = torch.nn.Parameter(alpha)
@@ -685,8 +689,10 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
     def __init__(self, precision=None, kappa=None, lamda=None, nb_channels=1, statistics_only=False, dimensions=2, **kwargs):
         r"""Constructor.
 
-        :param precision: instance defining the current quantization level (default `None`).
-        :type  precision: :py:class:`nemo.precision.Precision`
+        :param precision_kappa: instance defining the current quantization level (default `None`).
+        :type  precision_kappa: :py:class:`nemo.precision.Precision`
+        :param precision_lamda: instance defining the current quantization level (default `None`).
+        :type  precision_lamda: :py:class:`nemo.precision.Precision`
         :param kappa: the value of :math:`\kappa`.
         :type  kappa: `torch.Tensor` or float
         :param lamda: the value of :math:`\lambda`.
@@ -705,8 +711,8 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
             self.precision_kappa = Precision(bits=DEFAULT_QBATCHNORM_PREC)
             self.precision_lamda = Precision(bits=DEFAULT_QBATCHNORM_PREC)
         else:
-            self.precision_kappa = precision
-            self.precision_lamda = precision
+            self.precision_kappa = Precision(bits=precision.get_bits())
+            self.precision_lamda = Precision(bits=precision.get_bits())
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         if dimensions == 2:
@@ -741,29 +747,11 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
         """
 
         if not self.hardened:
-            kappa_int = self.kappa.abs().max()
-            lamda_int = self.lamda.abs().max()
-            if self.eps_kappa is None:
-                eps_kappa = 2*kappa_int/(2**self.precision_kappa.get_bits()-1)
-            else:
-                eps_kappa = self.eps_kappa
-            if self.eps_lamda is None:
-                eps_lamda = 2*lamda_int/(2**self.precision_lamda.get_bits()-1)
-            else:
-                eps_lamda = self.eps_lamda
-            # this is because lamda might be 0!
-            if eps_lamda < self.eps_lamda_min:
-                eps_lamda = self.eps_lamda_min
-            kappa_int = torch.floor(kappa_int / eps_kappa) * eps_kappa
-            lamda_int = torch.floor(lamda_int / eps_lamda) * eps_lamda
-            kappa_int = self.kappa.abs().max()
-            lamda_int = self.lamda.abs().max()
-
-            self.eps_kappa = eps_kappa
-            self.eps_lamda = eps_lamda
-
-            self.kappa.data[:] = pact_quantize_signed_inference(self.kappa.data[:], eps_kappa, kappa_int)
-            self.lamda.data[:] = pact_quantize_signed_inference(self.lamda.data[:], eps_lamda, lamda_int)
+            kappa_clip = self.kappa.abs().max()
+            lamda_clip = self.lamda.abs().max()
+            self.eps_lamda = self.eps_kappa * self.eps_in
+            self.kappa.data[:] = pact_quantize_signed_inference(self.kappa, self.eps_kappa, kappa_clip)
+            self.lamda.data[:] = pact_quantize_signed_inference(self.lamda, self.eps_lamda, lamda_clip)
             self.hardened = True
 
     def get_output_eps(self, eps_in):
@@ -781,14 +769,8 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
             eps_kappa = 2*kappa_int/(2**self.precision_kappa.get_bits()-1)
         else:
             eps_kappa = self.eps_kappa
-        # eps_lambda must be == eps_kappa * eps_in
         self.eps_kappa = eps_kappa
         self.eps_lamda = (eps_kappa * eps_in).clone().detach()
-        # check whether lamda can be represented in this many bits, otherwise, requantize it in a lossy fashion
-        n = torch.log2(self.lamda.abs().max()/self.eps_lamda)
-        if n > self.precision_lamda.get_bits():
-            lamda_int = self.lamda.abs().max()
-            self.eps_lamda = 2*lamda_int/(2**self.precision_lamda.get_bits()-1)
         return eps_kappa * eps_in
 
     def forward(self, x):
@@ -826,27 +808,24 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
                 eps_lamda = self.eps_lamda
             y = kappa * x + lamda
             return y
-        if not self.statistics_only:
+        if not self.statistics_only and not self.hardened:
             with torch.no_grad():
                 kappa_int = self.kappa.abs().max()
                 lamda_int = self.lamda.abs().max()
                 eps_kappa = 2*kappa_int/(2**self.precision_kappa.get_bits()-1)
                 eps_lamda = 2*lamda_int/(2**self.precision_lamda.get_bits()-1)
-                # this is because lamda might be 0!
-                if eps_lamda < self.eps_lamda_min:
-                    eps_lamda = self.eps_lamda_min
                 kappa_int = torch.floor(kappa_int / eps_kappa) * eps_kappa
                 lamda_int = torch.floor(lamda_int / eps_lamda) * eps_lamda
             kappa = pact_quantize_signed_inference(kappa, eps_kappa, kappa_int)
             lamda = pact_quantize_signed_inference(lamda, eps_lamda, lamda_int)
-            # at FQ stage, self.eps_in is None
-            if self.eps_in is not None:
-                lamda = pact_quantized_requantize(lamda, eps_lamda, eps_kappa*self.eps_in) * eps_kappa*self.eps_in
+        elif not self.statistics_only and self.hardened:
+            eps_kappa = self.eps_kappa
+            eps_lamda = self.eps_lamda
         out = kappa*x + lamda
         if self.statistics_only:
             with torch.no_grad():
                 self.min[:] = min(self.min.item(), out.min())
-                self.max[:] = min(self.max.item(), out.max())
+                self.max[:] = max(self.max.item(), out.max())
         return out
 
 class PACT_IntegerBatchNormNd(torch.nn.Module):
@@ -886,10 +865,6 @@ class PACT_IntegerBatchNormNd(torch.nn.Module):
 
         self.kappa.data[:] = self.kappa / self.eps_kappa
         self.lamda.data[:] = self.lamda / self.eps_lamda
-
-        # requantize lamda to eps_kappa*eps_in (which is the output precision)
-        self.lamda.data[:] = pact_integer_requantize(self.lamda, self.eps_lamda, self.eps_kappa*self.eps_in)
-
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -992,11 +967,11 @@ class PACT_Conv2d(torch.nn.Conv2d):
         if W_precision is None:
             self.W_precision = Precision()
         else:
-            self.W_precision = W_precision
+            self.W_precision = Precision(bits=W_precision.get_bits())
         if x_precision is None:
             self.x_precision = Precision()
         else:
-            self.x_precision = x_precision
+            self.x_precision = Precision(bits=x_precision.get_bits())
 
         self.quantize_x = quantize_x
         self.quantize_W = quantize_W
@@ -1223,11 +1198,11 @@ class PACT_Conv1d(torch.nn.Conv1d):
         if W_precision is None:
             self.W_precision = Precision()
         else:
-            self.W_precision = W_precision
+            self.W_precision = Precision(bits=W_precision.get_bits())
         if x_precision is None:
             self.x_precision = Precision()
         else:
-            self.x_precision = x_precision
+            self.x_precision = Precision(bits=x_precision.get_bits())
 
         self.quantize_x = quantize_x
         self.quantize_W = quantize_W
@@ -1375,11 +1350,11 @@ class PACT_Linear(torch.nn.Linear):
         if W_precision is None:
             self.W_precision = Precision()
         else:
-            self.W_precision = W_precision
+            self.W_precision = Precision(bits=W_precision.get_bits())
         if x_precision is None:
             self.x_precision = Precision()
         else:
-            self.x_precision = x_precision
+            self.x_precision = Precision(bits=x_precision.get_bits())
 
         self.quantize_x = quantize_x
         self.quantize_W = quantize_W

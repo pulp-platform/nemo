@@ -44,6 +44,18 @@ def _statistics_act_pact(self):
     finally:
         self.unset_statistics_act()
 
+@contextmanager
+def _statistics_bn_pact(self):
+    r"""Used with `with net.statistics_bn():`, calls `net.set_statistics_bn()` on enter
+    and `net.unset_statistics_bn()` on exit.    
+
+    """
+    self.set_statistics_bn()
+    try:
+        yield
+    finally:
+        self.unset_statistics_bn()
+
 def _set_statistics_act_pact(self):
     r"""Sets :py:class:`nemo.quant.PACT_Act` layers to collect statistics and work like ReLU's.
     
