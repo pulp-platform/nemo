@@ -110,7 +110,26 @@ def _set_eps_in_pact(self, eps_in):
                 eps_in_list.append(torch.tensor(eps.item(), requires_grad=False))
             m.eps_in_list = eps_in_list
 
-def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, prune_empty_bn=True, int_accurate=True, **kwargs):
+def _qd_stage(self, eps_in, add_input_bias_dict={}, remove_bias_dict={}, prune_empty_bn=True, int_accurate=True, bn_calibration_fn=None, bn_calibration_range_factor=8, **kwargs):
+    r"""High-level function to move the network from FQ to QD stage.
+
+    :param eps_in: Input precision quantum (required).
+    :type  eps_in: float
+    :param add_input_bias_dict: dictionary of layers to which an input bias must be added (layer name as key, bias as value).
+    :type  add_input_bias_dict: dict or `collections.OrderedDict`
+    :param remove_bias_dict: dictionary of Linear->BatchNorm couples where bias must be absorbed by the BatchNorm (Linear name as key, BatchNorm name as value).
+    :type  remove_bias_dict: dict or `collections.OrderedDict`
+    :param prune_empty_bn: if True (default), BatchNorm channel multiplicative parameters are pruned if smaller than 1e-9.
+    :type  prune_empty_bn: bool
+    :param int_accurate: if True (default), target an accurate representation of ID numerical dynamics (e.g., with requantization) at QD stage.
+    :type  int_accurate: bool
+    :param bn_calibration_fn: if not None (default), a function (e.g., calling validation) used to calibrate BatchNorm range.
+    :type  bn_calibration_fn: function
+    :param bn_calibration_range_factor: if bn_calibration_fn is None, multiply the clipping parameter of the following Activation multiplied by bn_calibration_range_factor to estimate BatchNorm range.
+    :type  bn_calibration_range_factor: int
+
+    """
+
     if prune_empty_bn:
         self.prune_empty_bn(threshold=1e-9)
     self.round_weights()
@@ -121,15 +140,28 @@ def _qd_stage(self, eps_in=None, add_input_bias_dict={}, remove_bias_dict={}, pr
         self.remove_bias(remove_bias_dict)
     if int_accurate:
         nemo.transform.bn_quantizer(self, **kwargs)
-        # harden_weights repeated to harden also BN parameters
-        self.harden_weights()
     else:  # this is mainly useful for debug purposes, to identify misalignments FQ/QD
         for n,m in self.named_modules():
             if (m.__class__.__name__ == "PACT_Act"):
                 m.precise = True
-    self.set_deployment(eps_in=eps_in, **kwargs)
+    self.set_deployment(eps_in=eps_in, **kwargs) # with initial BN eps
+    if bn_calibration_fn is not None:
+        with self.statistics_bn():
+            bn_calibration_fn()
+        self.calibrate_bn(**kwargs)
+    else:
+        self.calibrate_bn(minmax=False, range_factor=bn_calibration_range_factor, **kwargs)
+    self.set_deployment(eps_in=eps_in, **kwargs) # repeat, to fix BN eps
+    self.harden_weights()
 
 def _id_stage(self, eps_in=None, **kwargs):
+    r"""High-level function to move the network from QD to ID stage.
+
+    :param eps_in: Input precision quantum, default None (will use the previously saved eps_in).
+    :type  eps_in: float
+
+    """
+
     if self.stage == 'fq':
         self.qd_stage(eps_in=eps_in, **kwargs)
     self.stage = 'id'

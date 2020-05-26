@@ -110,6 +110,7 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=F
     module.fold_bn_withinv             = types.MethodType(nemo.transf.bn._fold_bn_pact, module)
     module.fold_thresholds             = types.MethodType(nemo.transf.bn._threshold_folding_pact, module)
     module.prune_empty_bn              = types.MethodType(nemo.transf.bn._prune_empty_bn_pact, module)
+    module.calibrate_bn                = types.MethodType(nemo.transf.bn._calibrate_bn_pact, module)
     module.get_eps_at                  = types.MethodType(nemo.transf.deploy._get_eps_at, module)
     module.set_eps_in                  = types.MethodType(nemo.transf.deploy._set_eps_in_pact, module)
     module.round_weights               = types.MethodType(nemo.transf.deploy._round_weights_pact, module)
@@ -134,6 +135,7 @@ def quantize_pact(module, W_bits=4, x_bits=4, dummy_input=None, remove_dropout=F
     module.set_statistics_act          = types.MethodType(nemo.transf.statistics._set_statistics_act_pact, module)
     module.get_statistics_act          = types.MethodType(nemo.transf.statistics._get_statistics_act_pact, module)
     module.unset_statistics_act        = types.MethodType(nemo.transf.statistics._unset_statistics_act_pact, module)
+    module.statistics_bn               = types.MethodType(nemo.transf.statistics._statistics_bn_pact, module)
     module.set_statistics_bn           = types.MethodType(nemo.transf.statistics._set_statistics_bn_pact, module)
     module.unset_statistics_bn         = types.MethodType(nemo.transf.statistics._unset_statistics_bn_pact, module)
     module.W_precision = Precision(W_bits, None)
@@ -203,7 +205,7 @@ def _hier_integerizer(module, **kwargs):
         module = PACT_IntegerBatchNormNd(kappa=module.kappa, lamda=module.lamda, eps_in=module.eps_in, eps_kappa=module.eps_kappa, eps_lamda=module.eps_lamda)
         module.integerize_weights(**kwargs)
     elif (module.__class__.__name__ == "PACT_Act"):
-        module = PACT_IntegerAct(precision=module.precision, eps_in=module.eps_in, alpha=module.alpha, **kwargs)
+        module = PACT_IntegerAct(precision=module.precision, eps_in=module.eps_in, eps_out=module.eps_static, alpha=module.alpha_static, **kwargs)
         module.set_output_eps(**kwargs)
     elif (module.__class__.__name__ == "PACT_IntegerAdd"):
         module.integerized = True

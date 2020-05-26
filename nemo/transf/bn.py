@@ -31,6 +31,8 @@ import torchvision.models
 import re
 from nemo.transf.common import *
 
+BN_PRECISION_MAX = 20
+
 def _absorb_affine_bn(self):
     for n,m in self.named_modules():
         if m.__class__.__name__ == "BatchNorm2d":
@@ -73,8 +75,57 @@ def _freeze_bn(self, reset_stats=False, disable_grad=False):
                 m.weight.requires_grad = False
                 m.bias.requires_grad = False
 
+def _calibrate_bn_pact(self, calib_dict={}, kappa_bit_default=16, lamda_bit_default=24, kappa_dict=None, lamda_dict=None, range_factor=8, minmax=False, **kwargs):
+    r"""Calibrates BN layer quantization for :py:class:`nemo.quant.pact.PACT_QuantizedBatchNormNd` layers.
+    Using BN min-max statistics previously calculated, this method calibrates the number of bits used in BN parameters
+    so that both the BN output and the `kappa`, `lamda` affine parameters are representable.
+    
+    :param kappa_bit_default: Default maximum number of bits for BN multiplicative parameter (can be overridden by `kappa_dict`); default 16.
+    :type  kappa_bit_default: int
+    :param lamda_bit_default: Default maximum number of bits for BN additive parameter (can be overridden by `lamda_dict`); default 32.
+    :type  lamda_bit_default: int
+    :param kappa_dict: dictionary of maximum number of bits for `kappa` in specific layers; overrides `kappa_bit_default`. Default None.
+    :type  kappa_dict: `dict` or `collections.OrderedDict`
+    :param lamda_dict: dictionary of maximum number of bits for `lamda` in specific layers; overrides `lamda_bit_default`. Default None.
+    :type  lamda_dict: `dict` or `collections.OrderedDict`
+    
+    """
+
+    if not calib_dict:
+        calib_dict = get_calib_dict_from_supernodes(self)
+
+    module_dict = {}
+    for n,m in self.named_modules():
+        if (m.__class__.__name__ == "PACT_Act" or \
+            m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
+            module_dict[n] = m
+
+    for n,m in self.named_modules():
+        if m.__class__.__name__ == "PACT_QuantizedBatchNormNd":
+            kappa_max = m.kappa.abs().max()
+            lamda_max = m.lamda.abs().max()
+            if minmax:
+                out_range = max(m.max.abs(), m.min.abs())
+            else: # if we do not have minmax statistics, approximate with alpha mult by a range_factor
+                out_range = module_dict[calib_dict[n]].alpha * range_factor
+            if kappa_dict is not None:
+                kappa_bit_lim = kappa_dict[n]
+            else:
+                kappa_bit_lim = kappa_bit_default
+            if lamda_dict is not None:
+                lamda_bit_lim = lamda_dict[n]
+            else:
+                lamda_bit_lim = lamda_bit_default
+            eps_lim = max(out_range, lamda_max) / (2**(lamda_bit_lim - 1) - 1)
+            eps_kappa_lim = eps_lim / m.eps_in
+            kappa_bits = min(int(min(torch.log2(1 + 2*kappa_max / eps_kappa_lim).floor(), kappa_bit_lim)), BN_PRECISION_MAX)
+            lamda_bits = min(lamda_bit_lim, BN_PRECISION_MAX)
+            m.precision_kappa.set_bits(kappa_bits)
+            m.precision_lamda.set_bits(lamda_bits)
+            # print("%s %d %d" % (n, kappa_bits, lamda_bits))
+
 def _unfreeze_bn(self):
-    r"""Sets :py:class:torch.nn.BatchNorm2d` layers to collect statistics and update `running_var` and `running_mean`.
+    r"""Sets :py:class:`torch.nn.BatchNorm2d` layers to collect statistics and update `running_var` and `running_mean`.
     
     """
 

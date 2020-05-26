@@ -35,7 +35,7 @@ import collections
 #   --terminal \
 #   --resume checkpoint/mobilenet_1.0_128_best.pth
 
-SAVE_RESULTS = False
+SAVE_RESULTS = False 
 TOL_RESULTS = 1.01
 
 # filter out ImageNet EXIF warnings
@@ -173,7 +173,7 @@ def main():
     remove_bias_dict = {'model.0.1' : 'model.0.2'}
     inputs += input_bias
 
-    model.qd_stage(eps_in=2./255, add_input_bias_dict=input_bias_dict, remove_bias_dict=remove_bias_dict, precision=nemo.precision.Precision(bits=20), int_accurate=True, limit_at_32_bits=False)
+    model.qd_stage(eps_in=2./255, add_input_bias_dict=input_bias_dict, remove_bias_dict=remove_bias_dict, precision=nemo.precision.Precision(bits=20), int_accurate=True, limit_at_32_bits=False, postpone_bn_hardening=False)
     # fix ConstantPad2d
     model.model[0][0].value = input_bias
 
@@ -182,9 +182,9 @@ def main():
    
     model.id_stage(requantization_factor=128, limit_at_32_bits=False)
     # fix ConstantPad2d
-    model.model[0][0].value = input_bias / (2./255)
+    model.model[0][0].value = input_bias * (255./2)
 
-    inputs = inputs / (2./255)
+    inputs = inputs * (255./2)
     ids = model.state_dict()
     bin_id, bout_id, _ = nemo.utils.get_intermediate_activations(model, forward, model, inputs, input_bias=input_bias, eps_in=2./255) 
 
@@ -209,18 +209,23 @@ def main():
             t = (diff[k]>-1e9).sum()
             max_eps  = torch.ceil(diff[k].max() / eps).item()
             mean_eps = torch.ceil(diff[k][idx].mean() / eps).item()
+            lim_max_eps = 0 if SAVE_RESULTS else math.ceil(results['max_eps'][k] * TOL_RESULTS)
+            lim_mean_eps = 0 if SAVE_RESULTS else math.ceil(results['mean_eps'][k] * TOL_RESULTS)
+            lim_ratio = 0 if SAVE_RESULTS else results['ratio'][k] * TOL_RESULTS
             try:
-                print("  max:   %.3f (%d eps)" % (diff[k].max().item(), max_eps))
-                print("  mean:  %.3f (%d eps) (only diff. elements)" % (diff[k][idx].mean().item(), mean_eps))
-                print("  #diff: %d/%d (%.1f%%)" % (n, t, float(n)/float(t)*100)) 
+                print("  max:   %.3f (%d eps): lim %d" % (diff[k].max().item(), max_eps, lim_max_eps))
+                print("  mean:  %.3f (%d eps) (only diff. elements): lim %d" % (diff[k][idx].mean().item(), mean_eps, lim_mean_eps))
+                print("  #diff: %d/%d (%.1f%%): lim %.1f%%" % (n, t, float(n)/float(t)*100, lim_ratio)) 
             except ValueError:
-                print("  #diff: 0/%d (0%%)" % (t,)) 
+                mean_eps = 0.0
+                max_eps = 0.0
+                print("  #diff: 0/%d (0%%): lim %.3f" % (t, lim_ratio)) 
             if SAVE_RESULTS:
                 results['mean_eps'][k] = mean_eps
                 results['max_eps'][k] = max_eps
                 results['ratio'][k] = float(n)/float(t)*100
-            assert(mean_eps <= results['mean_eps'][k] * TOL_RESULTS)
-            # assert(max_eps  <= results['max_eps'][k]  * TOL_RESULTS)
+            assert(mean_eps <= math.ceil(results['mean_eps'][k] * TOL_RESULTS))
+            assert(max_eps  <= math.ceil(results['max_eps'][k]  * TOL_RESULTS))
             assert(float(n)/float(t)*100 <= results['ratio'][k] * TOL_RESULTS)
     if SAVE_RESULTS:
         torch.save(results, "mobi_qd_id_res.pth")
