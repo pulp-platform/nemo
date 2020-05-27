@@ -369,7 +369,7 @@ class PACT_Act(torch.nn.Module):
         if not limit_at_32_bits:
             self.D = D
         else:
-            self.D = 2.0**(32-1-(self.precision.get_bits()))
+            self.D = min(D, 2.0**(32-1-(self.precision.get_bits())))
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
@@ -575,7 +575,7 @@ class PACT_IntegerAct(torch.nn.Module):
         if not limit_at_32_bits:
             self.D = D
         else:
-            self.D = 2.0**(32-(self.precision.get_bits()))
+            self.D = min(D, 2.0**(32-(self.precision.get_bits())))
 
     def get_output_eps(self, eps_in):
         r"""Get the output quantum (:math:`\varepsilon`) given the input one.
