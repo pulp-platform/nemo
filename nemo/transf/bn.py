@@ -165,7 +165,7 @@ def _prune_empty_bn_pact(self, bn_dict={}, threshold=None):
             m_after.weight.data[m_before.weight.data.flatten(1).abs().max(1)[0] < eps] = 0.
             m_after.running_var.data[m_before.weight.data.flatten(1).abs().max(1)[0] < eps] = 1.
 
-def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_alpha=True):
+def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_alpha=True, remove_bn=False):
     r"""Performs batch-normalization folding following the algorithm presented in
     https://arxiv.org/abs/1905.04166. It performs both normal folding and inverse
     folding using two separate dictionaries `bn_dict` and `bn_inv_dict`.
@@ -180,8 +180,10 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_
     :type  eps: float
     :param phi_inv: parameter added to `gamma` in inverse folding for better numerical stability (default 0).
     :type  phi_inv: float
-    :param reset_alpha: if True, reset the clipping parameters of weights (default True).
+    :param reset_alpha: if True (default), reset the clipping parameters of weights.
     :type  reset_alpha: bool
+    :param remove_bn: if True, replace all BN layers with identity layers to "physically remove" BN from the network (default False).
+    :type  remove_bn: bool
 
     """
 
