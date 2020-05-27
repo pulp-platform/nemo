@@ -75,7 +75,7 @@ def _freeze_bn(self, reset_stats=False, disable_grad=False):
                 m.weight.requires_grad = False
                 m.bias.requires_grad = False
 
-def _calibrate_bn_pact(self, calib_dict={}, kappa_bit_default=16, lamda_bit_default=24, kappa_dict=None, lamda_dict=None, range_factor=8, minmax=False, **kwargs):
+def _calibrate_bn_pact(self, calib_dict={}, kappa_bit_default=14, lamda_bit_default=20, kappa_dict=None, lamda_dict=None, range_factor=8, minmax=False, **kwargs):
     r"""Calibrates BN layer quantization for :py:class:`nemo.quant.pact.PACT_QuantizedBatchNormNd` layers.
     Using BN min-max statistics previously calculated, this method calibrates the number of bits used in BN parameters
     so that both the BN output and the `kappa`, `lamda` affine parameters are representable.
