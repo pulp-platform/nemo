@@ -37,6 +37,7 @@ import collections
 
 SAVE_RESULTS = False 
 TOL_RESULTS = 1.01
+TOL_PERCENT = 1.1
 
 # filter out ImageNet EXIF warnings
 warnings.filterwarnings("ignore", "(Possibly )?corrupt EXIF data", UserWarning)
@@ -226,7 +227,7 @@ def main():
                 results['ratio'][k] = float(n)/float(t)*100
             assert(mean_eps <= math.ceil(results['mean_eps'][k] * TOL_RESULTS))
             assert(max_eps  <= math.ceil(results['max_eps'][k]  * TOL_RESULTS))
-            assert(float(n)/float(t)*100 <= results['ratio'][k] * TOL_RESULTS)
+            assert(float(n)/float(t)*100 <= results['ratio'][k] * TOL_PERCENT)
     if SAVE_RESULTS:
         torch.save(results, "mobi_qd_id_res.pth")
 
