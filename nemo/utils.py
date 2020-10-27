@@ -229,14 +229,14 @@ def get_summary(net, input_size, batch_size=1, device="cuda", verbose=False):
         )
         total_params += summary[layer]["nb_params"]
         try:
-            params_size += abs(summary[layer]["nb_params"] / (1024) * summary[layer]["W_bits"] / 8.)
+            params_size += abs(summary[layer]["nb_params"] // (1024) * summary[layer]["W_bits"] / 8.)
         except KeyError:
-            params_size += abs(summary[layer]["nb_params"] / (1024) * 32. / 8.)
+            params_size += abs(summary[layer]["nb_params"] // (1024) * 32. / 8.)
         total_output += np.prod(summary[layer]["output_shape"])
         try:
-            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) / (1024) * summary[layer]["bits"] / 8)
+            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) // (1024) * summary[layer]["bits"] / 8)
         except KeyError:
-            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) / (1024) * 32 / 8)
+            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) // (1024) * 32 / 8)
         if "trainable" in summary[layer]:
             if summary[layer]["trainable"] == True:
                 trainable_params += summary[layer]["nb_params"]
