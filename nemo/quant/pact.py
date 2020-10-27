@@ -51,7 +51,7 @@ def pact_quantized_requantize(t, eps_in, eps_out, D=1, exclude_requant_rounding=
 def pact_integer_requantize(t, eps_in, eps_out, D=1):
     eps_ratio = (D*eps_in/eps_out).round()
     device = t.device
-    return torch.as_tensor((torch.as_tensor(t, dtype=torch.int64) * torch.as_tensor(eps_ratio, dtype=torch.int64) / torch.as_tensor(D, dtype=torch.int64)), dtype=torch.float32, device=device)
+    return torch.as_tensor((torch.as_tensor(t, dtype=torch.int64) * torch.as_tensor(eps_ratio, dtype=torch.int64) // torch.as_tensor(D, dtype=torch.int64)), dtype=torch.float32, device=device)
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 def pact_integer_requantize_add(*t, eps_in_list, eps_out, D=1):
