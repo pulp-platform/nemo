@@ -229,14 +229,14 @@ def get_summary(net, input_size, batch_size=1, device="cuda", verbose=False):
         )
         total_params += summary[layer]["nb_params"]
         try:
-            params_size += abs(summary[layer]["nb_params"] // (1024) * summary[layer]["W_bits"] / 8.)
+            params_size += abs(summary[layer]["nb_params"]  * summary[layer]["W_bits"] / 8. / (1024.))
         except KeyError:
-            params_size += abs(summary[layer]["nb_params"] // (1024) * 32. / 8.)
+            params_size += abs(summary[layer]["nb_params"] * 32. / 8. / (1024.))
         total_output += np.prod(summary[layer]["output_shape"])
         try:
-            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) // (1024) * summary[layer]["bits"] / 8)
+            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) * summary[layer]["bits"] / 8 / (1024.))
         except KeyError:
-            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) // (1024) * 32 / 8)
+            output_size = max(output_size, np.prod(summary[layer]["output_shape"]) * 32 / 8 / (1024.))
         if "trainable" in summary[layer]:
             if summary[layer]["trainable"] == True:
                 trainable_params += summary[layer]["nb_params"]
@@ -247,8 +247,8 @@ def get_summary(net, input_size, batch_size=1, device="cuda", verbose=False):
     s += "Trainable params: {0:,}".format(trainable_params) + "\n"
     s += "Non-trainable params: {0:,}".format(total_params - trainable_params) + "\n"
     s += "----------------------------------------------------------------" + "\n"
-    s += "Biggest activation tensor size (kB): %0.2f" % output_size + "\n"
-    s += "Params size (kB): %0.2f" % params_size + "\n"
+    s += "Biggest activation tensor size (kB): {0:,.2f}".format(output_size) + "\n"
+    s += "Params size (kB): {0:,.1f}".format(params_size) + "\n"
     s += "----------------------------------------------------------------" + "\n"
     if verbose:
         logging.info(s)
