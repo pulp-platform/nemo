@@ -489,6 +489,10 @@ class PACT_IntegerAdd(torch.nn.Module):
                 y += x[i]
             return y
         else:
+            if not hasattr(self, 'eps_out') and not hasattr(self, 'eps_in_list'):
+                print("[nemo-pact] ERROR! Trying to call forward on an Add for which eps_in's are not defined")
+            elif not hasattr(self, 'eps_out'):
+                self.get_output_eps(self.eps_in_list)
             return pact_integer_requantize_add(*x, eps_in_list=self.eps_in_list, eps_out=self.eps_out, D=self.D)
 
 class PACT_IntegerAvgPool2d(torch.nn.AvgPool2d):
