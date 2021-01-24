@@ -16,5 +16,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["bias", "bn", "common", "deploy", "equalize", "export", "pruning", "statistics", "utils"]
-from . import bias, bn, common, deploy, equalize, export, pruning, statistics, utils
+__all__ = ["bias", "bn", "common", "deploy", "equalize", "export", "pruning", "statistics", "utils", "sawb"]
+from . import bias, bn, common, deploy, equalize, export, pruning, statistics, utils, sawb
