@@ -1,0 +1,6 @@
+torch==1.6.0
+torchvision>=0.7.0,<0.8.0
+numpy
+tqdm
+packaging
+scikit-learn
