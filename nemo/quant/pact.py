@@ -295,7 +295,7 @@ class PACT_QuantFunc_Asymm(torch.autograd.Function):
         # see Hubara et al., Section 2.3
         where_input_nonclipped, where_input_ltalpha, where_input_gtbeta = ctx.saved_variables
         zero = torch.zeros(1).to(where_input_nonclipped.device)
-        grad_input = torch.where(where_input_nonclipped, grad_output, zero)
+        grad_input = grad_output # torch.where(where_input_nonclipped, grad_output, zero)
         grad_alpha = torch.where(where_input_ltalpha, grad_output, zero).sum().expand(1)
         grad_beta  = torch.where(where_input_gtbeta, grad_output, zero).sum().expand(1)
         return grad_input, None, grad_alpha, grad_beta
@@ -383,22 +383,22 @@ class PACT_Act(torch.nn.Module):
 
         return self.alpha/(2.0**(self.precision.get_bits())-1)
 
-    def reset_alpha(self, use_max=True, nb_std=5.):
+    def reset_alpha(self, use_max=True, mult=1.0, nb_std=None):
         r"""Reset the value of :math:`\alpha`. If `use_max` is `True`, then the highest tensor-wise value collected
             in the statistics collection phase is used. If `False`, the collected standard deviation multiplied by
             `nb_std` is used as a parameter
 
-        :param use_max: if True, use the tensor-wise maximum value collected in the statistics run as new :math:`\alpha` (default True).
+        :param use_max: if True, use the tensor-wise maximum value collected in the statistics run as new :math:`\alpha`; otherwise, use standard deviation (default True).
         :type  use_max: bool
-        :param nb_std: number of standard deviations to be used to initialize :math:`\alpha` if `use_max` is False.
-        :type  nb_std: float
+        :param mult: multiplier for maximum or standard deviation to be used to initialize :math:`\alpha`.
+        :type  mult: float
 
         """
 
         if use_max:
-            self.alpha.data[0] = self.max.item()
+            self.alpha.data[0] = self.max.item() * mult
         else:
-            self.alpha.data[0] = nb_std * torch.sqrt(self.running_var).item()
+            self.alpha.data[0] = torch.sqrt(self.running_var).item() * mult
 
     def get_statistics(self):
         r"""Returns the statistics collected up to now.
