@@ -99,3 +99,4 @@ def _weight_clip_sawb(self, asymmetric=True, layer_bits={}, check_minmax=True, v
             m.W_beta.data[:]  = beta
         if verbose:
             print("[weight clip SAWB] %s: Ew1=%.3e Ew2=%.3e alpha=%.3e beta=%.3e" % (n, Ew1, Ew2, m.W_alpha.data.item(), m.W_beta.data.item()))
+
