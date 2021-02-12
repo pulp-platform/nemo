@@ -59,7 +59,7 @@ def _disable_grad_sawb(self, layer_bits={}):
             m.W_beta.requires_grad = False
 
 # Set weight clipping parameters according to Statistics-Aware Weight Binning
-def _weight_clip_sawb(self, asymmetric=True, layer_bits={}):
+def _weight_clip_sawb(self, asymmetric=True, layer_bits={}, check_minmax=True, verbose=False):
 
     # Colab with SAWB LUT: https://colab.research.google.com/drive/1UEQnvVcSP3N-QTZLEumbbGCv_oLv-JtL
     module_dict = {}
@@ -91,5 +91,11 @@ def _weight_clip_sawb(self, asymmetric=True, layer_bits={}):
             beta = alpha + eps * (2**layer_bits[n]-1)
         else:
             beta = alpha + eps * 2**layer_bits[n]
-        m.W_alpha.data[:] = alpha
-        m.W_beta.data[:]  = beta
+        if check_minmax:
+            m.W_alpha.data[:] = min(alpha, m.weight.min().abs())
+            m.W_beta.data[:]  = min(beta, m.weight.max().abs())
+        else:
+            m.W_alpha.data[:] = alpha
+            m.W_beta.data[:]  = beta
+        if verbose:
+            print("[weight clip SAWB] %s: Ew1=%.3e Ew2=%.3e alpha=%.3e beta=%.3e" % (n, Ew1, Ew2, m.W_alpha.data.item(), m.W_beta.data.item()))
