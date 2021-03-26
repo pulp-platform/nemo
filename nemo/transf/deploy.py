@@ -148,7 +148,7 @@ def _qd_stage(self, eps_in, add_input_bias_dict={}, remove_bias_dict={}, prune_e
     if bn_calibration_fn is not None:
         with self.statistics_bn():
             bn_calibration_fn()
-        self.calibrate_bn(**kwargs)
+        self.calibrate_bn(minmax=True, **kwargs)
     else:
         self.calibrate_bn(minmax=False, range_factor=bn_calibration_range_factor, **kwargs)
     self.set_deployment(eps_in=eps_in, **kwargs) # repeat, to fix BN eps
