@@ -252,7 +252,7 @@ def get_summary(net, input_size, batch_size=1, device="cuda", verbose=False):
     s += "----------------------------------------------------------------" + "\n"
     if verbose:
         logging.info(s)
-    return summary, s
+    return { 'dict': summary, 'prettyprint': s, 'biggest_activation': output_size, 'params_size': params_size }
 
 def get_intermediate_activations(net, test_fn, *test_args, **test_kwargs):
     l = len(list(net.named_modules()))
