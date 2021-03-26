@@ -484,9 +484,9 @@ class PACT_IntegerAdd(torch.nn.Module):
 
     def forward(self, *x):
         if not self.deployment or not self.integerized:
-            y = x[0]
-            for i in range(1,len(x)):
-                y += x[i]
+            y = 0
+            for xi in x:
+                y += xi
             return y
         else:
             if not hasattr(self, 'eps_out') and not hasattr(self, 'eps_in_list'):
