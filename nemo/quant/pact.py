@@ -2,8 +2,9 @@
 # pact.py
 # Francesco Conti <fconti@iis.ee.ethz.ch>
 # Alfio Di Mauro <adimauro@iis.ee.ethz.ch>
+# Thorir Mar Ingolfsson <thoriri@iis.ee.ethz.ch>
 #
-# Copyright (C) 2018-2020 ETH Zurich
+# Copyright (C) 2018-2021 ETH Zurich
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,7 +36,7 @@ DEFAULT_POOL_REQNT_FACTOR = 32
 DEFAULT_QBATCHNORM_PREC = 12
 QD_REQUANT_DEBUG = False
 
-__all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
+__all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_IntegerAvgPool1d","PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 # requantization rounding can be excluded for debug purposes, e.g., to identify numerical
@@ -529,6 +530,34 @@ class PACT_IntegerAvgPool2d(torch.nn.AvgPool2d):
         ratio = (self.D/(self.kernel_size[0]*self.kernel_size[1])).round()
         return (y * ratio / self.D).floor()
 
+class PACT_IntegerAvgPool1d(torch.nn.AvgPool1d):
+    def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
+            count_include_pad=True, requantization_factor=DEFAULT_POOL_REQNT_FACTOR):
+        super(PACT_IntegerAvgPool1d, self).__init__(kernel_size, stride=stride, padding=padding, ceil_mode=ceil_mode,
+            count_include_pad=count_include_pad)
+        self.requantization_factor = requantization_factor
+        self.D = 2.0**torch.ceil(torch.log2(self.requantization_factor*torch.as_tensor(1.0*self.kernel_size[0])))
+
+    def get_output_eps(self, eps_in):
+        r"""Get the output quantum (:math:`\varepsilon`) given the input one.
+
+        :param eps_in: input quantum :math:`\varepsilon_{in}`.
+        :type  eps_in: :py:class:`torch.Tensor`
+        :return: output quantum :math:`\varepsilon_{out}`.
+        :rtype:  :py:class:`torch.Tensor`
+
+        """
+        return eps_in
+
+    def forward(self, input):
+        y = torch.nn.functional.avg_pool1d(input, self.kernel_size, self.stride,
+                                           self.padding, self.ceil_mode, self.count_include_pad)
+
+        y *= self.kernel_size[0]
+        ratio = (self.D/(self.kernel_size[0])).round()
+        return (y * ratio / self.D).floor()
+
+
 class PACT_IntegerAct(torch.nn.Module):
     r"""PACT (PArametrized Clipping acTivation) activation for integer images.
 
@@ -722,7 +751,7 @@ class PACT_QuantizedBatchNormNd(torch.nn.Module):
         if dimensions == 2:
             param_shape = lambda n : (1, n, 1, 1)
         elif dimensions == 1:
-            param_shape = lambda n : (n,)
+            param_shape = lambda n : (1,n,1)
 
         if kappa is None:
             self.kappa = torch.nn.Parameter(torch.zeros(*param_shape(nb_channels)).to(device), requires_grad=False)

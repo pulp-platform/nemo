@@ -2,8 +2,9 @@
 # transform.py
 # Francesco Conti <fconti@iis.ee.ethz.ch>
 # Alfio Di Mauro <adimauro@iis.ee.ethz.ch>
+# Thorir Mar Ingolfsson <thoriri@iis.ee.ethz.ch>
 #
-# Copyright (C) 2018-2020 ETH Zurich
+# Copyright (C) 2018-2021 ETH Zurich
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -214,6 +215,9 @@ def _hier_integerizer(module, **kwargs):
         module.integerized = True
     elif (module.__class__.__name__ == "AvgPool2d"):
         module = PACT_IntegerAvgPool2d(module.kernel_size, stride=module.stride, padding=module.padding, ceil_mode=module.ceil_mode,
+            count_include_pad=module.count_include_pad)
+    elif (module.__class__.__name__ == "AvgPool1d"):
+        module = PACT_IntegerAvgPool1d(module.kernel_size, stride=module.stride, padding=module.padding, ceil_mode=module.ceil_mode,
             count_include_pad=module.count_include_pad)
     else:
         for n,m in module.named_children():
