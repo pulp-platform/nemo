@@ -31,10 +31,30 @@ import torchvision.models
 import re
 from packaging import version
 
+def _hier_flat_dict_build(module, name):
+    for n,m in module.named_children():
+        if n == name:
+            return m
+        elif n == name.split('.')[0]:
+            return _hier_flat_dict_build(m, '.'.join(name.split('.')[1:]))
+    return module
+
+def _hier_get_name_from_child(module, child, name):
+    for n,m in module.named_children():
+        name_plus_n = name + '.' + n if name != '' else n
+        if m == child:
+            return name_plus_n
+        elif len(list(m.named_children())) > 0:
+            name_child = _hier_get_name_from_child(m, child, name_plus_n)
+            if name_child is not '':
+                return name_child
+    return ''
+
 # necessary for PyTorch >= 1.4! See https://github.com/pytorch/pytorch/issues/33463#issuecomment-606399944
 class scope_name_workaround(object):
-    def __init__(self):
+    def __init__(self, mother):
         self.backup = None
+        self.mother = mother
 
     def __enter__(self):
         def _tracing_name(self_, tracing_state):
@@ -53,10 +73,8 @@ class scope_name_workaround(object):
             if not hasattr(tracing_state, '_traced_module_stack'):
                 tracing_state._traced_module_stack = []
             name = _tracing_name(self_, tracing_state)
-            if name:
-                tracing_state.push_scope('%s[%s]' % (self_._get_name(), name))
-            else:
-                tracing_state.push_scope(self_._get_name())
+            scoped_name = _hier_get_name_from_child(self.mother, self_, '')
+            tracing_state.push_scope(scoped_name)
             tracing_state._traced_module_stack.append(self_)
             try:
                 result = self_.forward(*input, **kwargs)
@@ -72,17 +90,7 @@ class scope_name_workaround(object):
         setattr(torch.nn.Module, '_slow_forward', self.backup)
 
 def onnx_name_2_pytorch_name(name):
-    name_parts = re.findall('\[.*?\]', name)
-    name_parts = [part[1:-1] for part in name_parts]
-    return '.'.join(name_parts)
-
-def _hier_flat_dict_build(module, name):
-    for n,m in module.named_children():
-        if n == name:
-            return m
-        elif n == name.split('.')[0]:
-            return _hier_flat_dict_build(m, '.'.join(name.split('.')[1:]))
-    return module
+    return name.split('/')[-1]
 
 class DeployNode(object):
     def __init__(self, key="", incoming=None, outgoing=None):
@@ -128,7 +136,7 @@ class DeployGraph(object):
             torch.onnx._optimize_trace(trace, torch.onnx.OperatorExportTypes.ONNX)
             graph = trace.graph()
         else:
-            with scope_name_workaround():
+            with scope_name_workaround(module):
                 try:
                     graph, _params_dict, _torch_out = torch.onnx.utils._model_to_graph(module, dummy_input, propagate=True, _retain_param_name=True)
                 except TypeError:
@@ -224,8 +232,6 @@ class DeployGraph(object):
             target = self.nodes.get(key, None)
         if target is None:
             print("[nemo-graph] Warning: %s is not a module name" % key)
-            # import IPython
-            # IPython.embed()
             return None
         eps_list = []
         for incoming_idx in range(len(target.incoming)):
