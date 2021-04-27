@@ -99,14 +99,19 @@ def _set_eps_in_pact(self, eps_in):
     assert(self.graph is not None)
     self.graph.rebuild_module_dict()
     for n,m in self.named_modules():
+        if (m.__class__.__name__ == "PACT_Act" or \
+            m.__class__.__name__ == "PACT_QuantizedBatchNormNd" or \
+            m.__class__.__name__ == "PACT_IntegerAdd"):
+            eps_in_new = self.get_eps_at(n, eps_in)
+            if eps_in_new is None:
+                continue
         if (m.__class__.__name__ == "PACT_Act"):
-            m.eps_in = torch.tensor(self.get_eps_at(n, eps_in).item(), requires_grad=False)
+            m.eps_in = torch.tensor(eps_in_new[0], requires_grad=False)
         if (m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
-            m.eps_in = torch.tensor(self.get_eps_at(n, eps_in).item(), requires_grad=False)
+            m.eps_in = torch.tensor(eps_in_new[0], requires_grad=False)
         if (m.__class__.__name__ == "PACT_IntegerAdd"):
-            eps_in_tmp = self.get_eps_at(n, eps_in)
             eps_in_list = []
-            for eps in eps_in_tmp:
+            for eps in eps_in_new:
                 eps_in_list.append(torch.tensor(eps.item(), requires_grad=False))
             m.eps_in_list = eps_in_list
 
