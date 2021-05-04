@@ -262,7 +262,8 @@ class DeployGraph(object):
                     break
             if type(eps) is float:
                 eps_list.append(torch.tensor(eps))
-            eps_list.append(eps)
+            else:
+                eps_list.append(eps)
         if len(eps_list) == 1:
             return eps_list[0]
         else:
