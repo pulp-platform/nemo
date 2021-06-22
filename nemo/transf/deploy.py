@@ -44,6 +44,7 @@ def _harden_weights_pact(self, **kwargs):
 
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             m.train_loop_oldprec = float(m.W_beta.item()+m.W_alpha.item())/(2.0**(m.W_precision.get_bits())-1)
@@ -58,6 +59,7 @@ def _round_weights_pact(self, **kwargs):
 
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             m.weight.data[:] += (m.W_beta.item()+m.W_alpha.item())/(2.0**(m.W_precision.get_bits())-1) / 2
@@ -79,6 +81,7 @@ def _set_deployment_pact(self, eps_in, only_activations=False, **kwargs):
         self.set_eps_in(eps_in)
     for n,m in self.named_modules():
         if ((not only_activations and m.__class__.__name__ == "PACT_Conv2d") or \
+            (not only_activations and m.__class__.__name__ == "PACT_ConvTranspose2d") or \
             (not only_activations and m.__class__.__name__ == "PACT_Conv1d") or \
             (not only_activations and m.__class__.__name__ == "PACT_Linear") or \
             (not only_activations and m.__class__.__name__ == "PACT_IntegerAdd") or \

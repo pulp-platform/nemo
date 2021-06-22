@@ -33,7 +33,8 @@ import re
 __all__ = [ "reshape_before", "reshape_after", "weight_range", "weight_min", "weight_max", "onnx_name_2_pytorch_name", "get_bn_dict_from_supernodes", "get_equalize_dict_from_supernodes", "get_calib_dict_from_supernodes" ]
 
 def reshape_before(m, s):
-    if   m.__class__.__name__ == "PACT_Conv2d":
+    if   m.__class__.__name__ == "PACT_Conv2d" or \
+         m.__class__.__name__ == "PACT_ConvTranspose2d":
         return s.reshape((s.shape[0],1,1,1))
     elif m.__class__.__name__ == "PACT_Conv1d":
         return s.reshape((s.shape[0],1,1))
@@ -43,7 +44,8 @@ def reshape_before(m, s):
         return s
 
 def reshape_after(m, s):
-    if   m.__class__.__name__ == "PACT_Conv2d":
+    if  m.__class__.__name__ == "PACT_Conv2d" or \
+        m.__class__.__name__ == "PACT_ConvTranspose2d":
         if m.groups == s.shape[0]:
             # dwc
             return s.reshape((s.shape[0],1,1,1))
@@ -57,7 +59,8 @@ def reshape_after(m, s):
         return s
 
 def weight_max(m, range_idx):
-    if   m.__class__.__name__ == "PACT_Conv2d":
+    if  m.__class__.__name__ == "PACT_Conv2d" or \
+        m.__class__.__name__ == "PACT_ConvTranspose2d":
         if m.groups == m.weight.shape[0]:
             range_idx = 0 # for DW-conv, always marginalize idx 1
         return m.weight.max(3)[0].max(2)[0].max(1-range_idx)[0] 
@@ -69,7 +72,8 @@ def weight_max(m, range_idx):
         return m.weight.data.abs()
 
 def weight_min(m, range_idx):
-    if   m.__class__.__name__ == "PACT_Conv2d":
+    if  m.__class__.__name__ == "PACT_Conv2d" or \
+        m.__class__.__name__ == "PACT_ConvTranspose2d":
         if m.groups == m.weight.shape[0]:
             range_idx = 0 # for DW-conv, always marginalize idx 1
         return m.weight.min(3)[0].min(2)[0].min(1-range_idx)[0]
@@ -81,7 +85,8 @@ def weight_min(m, range_idx):
         return m.weight.data.abs()
 
 def weight_range(m, range_idx, symmetric=False):
-    if   m.__class__.__name__ == "PACT_Conv2d":
+    if  m.__class__.__name__ == "PACT_Conv2d" or \
+        m.__class__.__name__ == "PACT_ConvTranspose2d":
         if m.groups == m.weight.shape[0]:
             range_idx = 0 # for DW-conv, always marginalize idx 1
         if not symmetric:
@@ -116,6 +121,7 @@ def get_equalize_dict_from_supernodes(net):
     for k,ssn in net.graph.get_supernodes().items():
         for n in ssn['supernode']:
              if isinstance(n[1], PACT_Conv2d) or \
+                isinstance(n[1], PACT_ConvTranspose2d) or \
                 isinstance(n[1], PACT_Conv1d) or \
                 isinstance(n[1], PACT_Linear):
                  lin[k]  = n[0]
@@ -142,6 +148,7 @@ def get_bn_dict_from_supernodes(net):
                isinstance(n[1], PACT_QuantizedBatchNormNd):
                 bn.append(n[0])
             if isinstance(n[1], PACT_Conv2d) or \
+               isinstance(n[1], PACT_ConvTranspose2d) or \
                isinstance(n[1], PACT_Conv1d) or \
                isinstance(n[1], PACT_Linear):
                 lin.append(n[0])

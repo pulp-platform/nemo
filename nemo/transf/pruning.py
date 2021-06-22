@@ -39,6 +39,7 @@ def _prune_weights_pact(self, **kwargs):
     pruned = 0
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             pruned += m.prune_weights(**kwargs)

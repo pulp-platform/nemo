@@ -42,6 +42,7 @@ def _add_input_bias_pact(self, lin_dict, eps_in=None):
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "ConstantPad2d"):
@@ -50,6 +51,7 @@ def _add_input_bias_pact(self, lin_dict, eps_in=None):
     for n in lin_dict.keys():
         m = module_dict[n]
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             try:
@@ -70,6 +72,7 @@ def _remove_input_bias_pact(self):
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             module_dict[n] = m
@@ -93,6 +96,7 @@ def _remove_bias_pact(self, bn_dict={}):
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \

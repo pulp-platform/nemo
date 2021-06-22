@@ -35,7 +35,7 @@ DEFAULT_POOL_REQNT_FACTOR = 32
 DEFAULT_QBATCHNORM_PREC = 12
 QD_REQUANT_DEBUG = False
 
-__all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
+__all__ = ["PACT_Conv1d", "PACT_Conv2d", "PACT_ConvTranspose2d", "PACT_Linear", "PACT_Act", "PACT_ThresholdAct", "PACT_IntegerAct", "PACT_IntegerAvgPool2d", "PACT_Identity", "PACT_QuantizedBatchNormNd", "PACT_IntegerBatchNormNd"]
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 # requantization rounding can be excluded for debug purposes, e.g., to identify numerical
@@ -1149,6 +1149,242 @@ class PACT_Conv2d(torch.nn.Conv2d):
                 pad = self.padding
             x_quant = torch.nn.functional.pad(x_quant, pad, 'constant', self.padding_value)
         y = torch.nn.functional.conv2d(
+            x_quant,
+            W_quant,
+            self.bias, # typically nil
+            self.stride,
+            self.padding if not self.deployment or self.bias is None else 0,
+            self.dilation,
+            self.groups
+        )
+        if not self.training and self.quantize_W:
+            del W_quant
+        # y is returned non-quantized, as it is assumed to be quantized after BN
+        return y
+
+
+class PACT_ConvTranspose2d(torch.nn.ConvTranspose2d):
+    r"""PACT (PArametrized Clipping acTivation) 2d convolution, extending :py:class:`torch.nn.Conv2d`.
+
+    Implements a :py:class:`torch.nn.Module` to implement PACT-like convolution. It uses PACT-like quantized weights and can be configured to quantize also input activations.
+    It assumes full-precision storage of partial results.
+
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        quantize_x=False,
+        quantize_W=True,
+        quantize_y=False,
+        W_precision=None,
+        x_precision=None,
+        alpha=1.,
+        quant_asymm=True,
+        **kwargs
+    ):
+        r"""Constructor. Supports all arguments supported by :py:class:`torch.nn.Conv2d` plus additional ones.
+
+        :param quantize_x: if True, quantize input activations (default False).
+        :type  quantize_x: bool
+        :param quantize_W: if True, quantize weights (default True).
+        :type  quantize_W: bool
+        :param x_precision: precision to be used for quantization of input activations (default None).
+        :type  x_precision: :py:class:`nemo.precision.Precision`
+        :param W_precision: precision to be used for quantization of weights (default None).
+        :type  W_precision: :py:class:`nemo.precision.Precision`
+        :param alpha: the value of :math:`\alpha` (default 1.0).
+        :type  alpha: `torch.Tensor` or float
+        :param quant_asymm: use asymmetric quantization for weights (default `True`).
+        :type  quant_asymm: bool
+        """
+        if W_precision is None:
+            self.W_precision = Precision()
+        else:
+            self.W_precision = Precision(bits=W_precision.get_bits())
+        if x_precision is None:
+            self.x_precision = Precision()
+        else:
+            self.x_precision = Precision(bits=x_precision.get_bits())
+
+        self.quantize_x = quantize_x
+        self.quantize_W = quantize_W
+
+        super(PACT_ConvTranspose2d, self).__init__(in_channels, out_channels, kernel_size, **kwargs)
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.W_alpha = torch.nn.Parameter(torch.Tensor((alpha,)).to(device))
+        if quant_asymm:
+            self.W_beta  = torch.nn.Parameter(torch.Tensor((alpha,)).to(device))
+
+        self.x_alpha = torch.nn.Parameter(torch.Tensor((2.0,)).to(device))
+        self.weight.data.uniform_(-1., 1.)
+
+        self.quant_asymm = quant_asymm
+
+        self.train_loop = True
+        self.deployment = False
+        self.train_loop_oldprec = None
+
+        self.padding_value = 0
+        self.hardened = False
+        self.integerized = False
+        self.eps_out_static = None
+
+    def reset_alpha_weights(self, use_method='max', nb_std=5., verbose=False, dyn_range_bins=1024, dyn_range_cutoff=0., **kwargs):
+        r"""Resets :math:`\alpha` and :math:`\beta` parameters for weights.
+
+        """
+
+        if not self.quant_asymm:
+            self.W_alpha.data[0] = self.weight.data.abs().max()
+        elif use_method=='max':
+            self.W_alpha.data[0] = -self.weight.data.min()
+            self.W_beta.data [0] =  self.weight.data.max()
+        elif use_method=='std':
+            self.W_alpha.data[0] = -self.weight.data.mean() + nb_std*self.weight.data.std()
+            self.W_beta.data[0]  =  self.weight.data.mean() + nb_std*self.weight.data.std()
+        elif use_method=='dyn_range':
+            import scipy.stats
+            alpha_n = self.weight.data.min()
+            beta    = self.weight.data.max()
+            x = np.linspace(alpha_n.cpu().detach().numpy(), beta.cpu().detach().numpy(), dyn_range_bins)
+            res = scipy.stats.cumfreq(self.weight.data.cpu().detach().numpy(), dyn_range_bins, defaultreallimits=(alpha_n.cpu().detach().numpy(), beta.cpu().detach().numpy()))
+            yh = res.cumcount / res.cumcount[-1]
+            if not (yh<dyn_range_cutoff).any() and not (yh>1-dyn_range_cutoff).any():
+                self.W_alpha.data[0] = torch.as_tensor(-x.min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x.max(), device=self.W_beta.data.device)
+            elif not (yh<dyn_range_cutoff).any():
+                self.W_alpha.data[0] = torch.as_tensor(-x[yh>1-dyn_range_cutoff].min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x.max(), device=self.W_beta.data.device)
+            elif not (yh>1-dyn_range_cutoff).any():
+                self.W_alpha.data[0] = torch.as_tensor(-x.min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x[yh<dyn_range_cutoff].max(), device=self.W_beta.data.device)
+            else:
+                self.W_alpha.data[0] = torch.as_tensor(-x[yh>1-dyn_range_cutoff].min(), device=self.W_alpha.data.device)
+                self.W_beta.data[0]  = torch.as_tensor(x[yh<dyn_range_cutoff].max(), device=self.W_beta.data.device)
+            if self.W_alpha < 0:
+                self.W_alpha.data[:] = -self.W_alpha.data[:]
+            if self.W_beta < 0:
+                self.W_beta.data[:] = -self.W_beta.data[:]
+            assert (self.W_alpha >= 0).all()
+            assert (self.W_beta >= 0).all()
+
+        if verbose:
+            logging.info("[Quant] W_alpha = %.5f vs W_min = %.5f" % (self.W_alpha.data[0], self.weight.min()))
+            logging.info("[Quant] W_beta  = %.5f vs W_max = %.5f" % (self.W_beta.data[0], self.weight.max()))
+
+    def harden_weights(self):
+        r"""Replaces the current value of weight tensors (full-precision, quantized on forward-prop) with the quantized value.
+
+        """
+
+        if not self.hardened:
+            # here, clipping parameters are also quantized in order to cope with the PACT variant utilized here.
+            # in this way, the ID version will be able to use only an integer displacement or none at all if
+            # symmetric weights are used
+            if self.quant_asymm:
+                eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=False, train_loop_oldprec=self.train_loop_oldprec)
+                self.eps_static = eps
+            else: 
+                eps = (2*self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha)
+            self.hardened = True
+
+    def integerize_weights(self, **kwargs):
+        r"""Replaces the current value of weight tensors with the integer weights (i.e., the weight's quantized image).
+
+        """
+      
+        if not self.integerized:
+            if self.quant_asymm:
+                eps = self.eps_static
+                self.weight.data = self.weight.data/self.eps_static
+            else:
+                eps = 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1)
+                self.weight.data = pact_quantize_signed_inference(self.weight, eps, self.W_alpha) / eps
+            self.integerized = True
+
+    def prune_weights(self, threshold=0.1, eps=2**-9.):
+        r"""Prunes the weights of the layer.
+
+        The pruning is performed channel-wise by replacing all weights that are "near" to the channel-wise mean with the mean itself.
+        "Near" weights are those that differ with the mean by less than `threshold` times the standard deviation.
+
+        :param threshold: threshold used for pruning (default 0.1).
+        :type  threshold: float
+        :param eps: parameter used to compare the difference with 0 (default 2^-9).
+        :type  eps: float
+
+        """
+
+        logging.info("[Pruning] tau=%.1e", threshold)
+        stdev_per_chan = self.weight.data.std ((2,3), keepdim=True)
+        mean_per_chan  = self.weight.data.mean((2,3), keepdim=True) # + eps
+        self.weight.data = torch.where((self.weight.data - mean_per_chan).abs() < stdev_per_chan*threshold, mean_per_chan, self.weight.data)
+        wc = self.weight.data.clone().detach().to('cpu').numpy().flatten()
+        logging.info("[Pruning] Pruned %d" % np.count_nonzero(wc < eps))
+        return np.count_nonzero(wc < eps)
+
+    def get_output_eps(self, eps_in):
+        r"""Get the output quantum (:math:`\varepsilon`) given the input one.
+
+        :param eps_in: input quantum :math:`\varepsilon_{in}`.
+        :type  eps_in: :py:class:`torch.Tensor`
+        :return: output quantum :math:`\varepsilon_{out}`.
+        :rtype:  :py:class:`torch.Tensor`
+
+        """
+
+        if self.eps_out_static is None:
+            if self.quant_asymm:
+                eps_W = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+            else:
+                eps_W = 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1)
+            self.eps_out_static = eps_W * eps_in
+        return self.eps_out_static
+
+    def forward(self, input, output_size=None):
+        r"""Forward-prop function for PACT-quantized 2d-convolution.
+
+        :param input: input activations tensor.
+        :type  input: `torch.Tensor`
+
+        """
+
+        if self.training and self.quantize_x and not self.deployment:
+            x_quant = pact_quantize_signed(input, self.x_alpha/(2.0**(self.x_precision.get_bits())-1), self.x_alpha)
+        else:
+            x_quant = input
+        if self.training and self.quantize_W and not self.deployment:
+            if self.quant_asymm:
+                W_quant = pact_quantize_asymm(self.weight, (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1), self.W_alpha, self.W_beta)
+            else:
+                W_quant = pact_quantize_signed(self.weight, 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1), self.W_alpha)
+        elif self.quantize_W and not self.deployment:
+            if self.quant_asymm:
+                eps = (self.W_beta+self.W_alpha)/(2.0**(self.W_precision.get_bits())-1)
+                W_quant = pact_quantize_asymm_inference(self.weight, eps, torch.ceil(self.W_alpha/eps)*eps, torch.floor(self.W_beta/eps)*eps, train_loop=self.train_loop, train_loop_oldprec=self.train_loop_oldprec)
+            else:
+                W_quant = pact_quantize_signed_inference(self.weight, 2*self.W_alpha/(2.0**(self.W_precision.get_bits())-1), self.W_alpha)
+        else:
+            W_quant = self.weight
+        # if input bias is present, padding should be performed using the input bias as padding value instead of 0
+        if self.deployment and self.padding is not None and self.bias is not None:
+            if type(self.padding) is not tuple and type(self.padding) is not list:
+                pad = (self.padding, self.padding, self.padding, self.padding)
+            elif len(self.padding) == 2:
+                pad = (*self.padding, *self.padding)
+            else:
+                pad = self.padding
+            x_quant = torch.nn.functional.pad(x_quant, pad, 'constant', self.padding_value)
+
+        output_padding = self._output_padding(
+            x_quant, output_size, self.stride, self.padding, self.kernel_size, self.dilation
+        )
+        y = torch.nn.functional.conv_transpose2d(
             x_quant,
             W_quant,
             self.bias, # typically nil

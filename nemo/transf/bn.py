@@ -140,6 +140,7 @@ def _prune_empty_bn_pact(self, bn_dict={}, threshold=None):
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \
@@ -193,6 +194,7 @@ def _fold_bn_pact(self, bn_dict={}, bn_inv_dict={}, eps=None, phi_inv=0., reset_
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \

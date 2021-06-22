@@ -53,6 +53,7 @@ def _disable_grad_sawb(self, layer_bits={}):
         use_default = True
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             m.W_alpha.requires_grad = False
@@ -69,6 +70,7 @@ def _weight_clip_sawb(self, asymmetric=True, layer_bits={}, check_minmax=True, v
         use_default = True
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             if use_default:

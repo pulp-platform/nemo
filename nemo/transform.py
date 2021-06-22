@@ -200,6 +200,7 @@ def _hier_bn_dequantizer(module):
 
 def _hier_integerizer(module, **kwargs):
     if (module.__class__.__name__ == "PACT_Conv2d" or \
+        module.__class__.__name__ == "PACT_ConvTranspose2d" or \
         module.__class__.__name__ == "PACT_Conv1d" or \
         module.__class__.__name__ == "PACT_Linear"):
         module.integerize_weights(**kwargs)
@@ -242,6 +243,27 @@ def _hier_quantizer_pact(module, graph=None, **kwargs):
             _single(module.kernel_size),
             stride=_single(module.stride),
             padding=_single(module.padding),
+            dilation=_single(module.dilation),
+            groups=module.groups,
+            bias=True if module.bias is not None else False
+        )
+        module.weight.data = W.clone()
+        if b is not None:
+            module.bias.data = b.clone()
+        return module
+    if module.__class__.__name__ == 'ConvTranspose2d':
+        W = module.weight.data
+        try:
+            b = module.bias.data
+        except AttributeError:
+            b = None
+        module = PACT_ConvTranspose2d(
+            module.in_channels,
+            module.out_channels,
+            _single(module.kernel_size),
+            stride=_single(module.stride),
+            padding=_single(module.padding),
+            output_padding=_single(module.output_padding),
             dilation=_single(module.dilation),
             groups=module.groups,
             bias=True if module.bias is not None else False

@@ -86,6 +86,7 @@ def _export_weights_legacy_int16(self, header_name='weights.h', save_binary=Fals
     x_alpha *= x_alpha_safety_factor
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             W_alpha[n] = max(-m.W_alpha.item(), m.W_beta.item())

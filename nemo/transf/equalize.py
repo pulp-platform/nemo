@@ -60,6 +60,7 @@ def _equalize_weights_dfq_pact(self, equalize_dict={}, act_dict={}, verbose=Fals
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \
@@ -130,6 +131,7 @@ def _equalize_weights_unfolding_pact(self, bn_dict={}, verbose=False, eps=None):
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \
@@ -173,6 +175,7 @@ def _equalize_weights_lsq_pact(self, bn_dict={}, verbose=False, eps=None):
     module_dict = {}
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" or \
             m.__class__.__name__ == "BatchNorm2d" or \

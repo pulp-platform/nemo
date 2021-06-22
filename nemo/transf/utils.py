@@ -74,6 +74,7 @@ def _change_precision_pact(self, bits=4, scale_activations=True, scale_weights=T
         if m.__class__.__name__ == "PACT_Act" and scale_activations:
             m.precision = max(self.x_precision, min_prec_x)
         if scale_weights and (m.__class__.__name__ == "PACT_Conv2d" or \
+                              m.__class__.__name__ == "PACT_ConvTranspose2d" or \
                               m.__class__.__name__ == "PACT_Conv1d" or \
                               m.__class__.__name__ == "PACT_Linear"):
             m.W_precision = max(self.W_precision, min_prec_W)
@@ -85,6 +86,7 @@ def _change_precision_pact(self, bits=4, scale_activations=True, scale_weights=T
             except AttributeError:
                 pass
         if verbose and scale_weights and (m.__class__.__name__ == "PACT_Conv2d" or \
+                                          m.__class__.__name__ == "PACT_ConvTranspose2d" or \
                                           m.__class__.__name__ == "PACT_Conv1d" or \
                                           m.__class__.__name__ == "PACT_Linear"):
             try:
@@ -99,6 +101,7 @@ def _set_train_loop_pact(self):
 
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" ):
             m.train_loop = True
@@ -110,6 +113,7 @@ def _unset_train_loop_pact(self):
 
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear" ):
             m.train_loop = False
@@ -149,6 +153,7 @@ def _reset_alpha_weights_pact(self, method='standard', **kwargs):
 
     for n,m in self.named_modules():
         if (m.__class__.__name__ == "PACT_Conv2d" or \
+            m.__class__.__name__ == "PACT_ConvTranspose2d" or \
             m.__class__.__name__ == "PACT_Conv1d" or \
             m.__class__.__name__ == "PACT_Linear"):
             m.reset_alpha_weights(**kwargs)
