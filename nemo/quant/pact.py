@@ -1382,7 +1382,7 @@ class PACT_ConvTranspose2d(torch.nn.ConvTranspose2d):
             x_quant = torch.nn.functional.pad(x_quant, pad, 'constant', self.padding_value)
 
         output_padding = self._output_padding(
-            x_quant, output_size, self.stride, self.padding, self.kernel_size, self.dilation
+            x_quant, output_size, self.stride, self.padding, self.kernel_size
         )
         y = torch.nn.functional.conv_transpose2d(
             x_quant,
