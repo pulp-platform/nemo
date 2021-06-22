@@ -1390,8 +1390,9 @@ class PACT_ConvTranspose2d(torch.nn.ConvTranspose2d):
             self.bias, # typically nil
             self.stride,
             self.padding if not self.deployment or self.bias is None else 0,
-            self.dilation,
-            self.groups
+            output_padding,
+            self.groups,
+            self.dilation
         )
         if not self.training and self.quantize_W:
             del W_quant
