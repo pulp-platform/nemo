@@ -50,12 +50,14 @@ def pact_quantized_requantize(t, eps_in, eps_out, D=1, exclude_requant_rounding=
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 def pact_integer_requantize(t, eps_in, eps_out, D=1):
+    D = D.clone().detach().to(eps_in.device)
     eps_ratio = (D*eps_in/eps_out).round()
     device = t.device
-    return torch.as_tensor((torch.as_tensor(t, dtype=torch.int64) * torch.as_tensor(eps_ratio, dtype=torch.int64) // D), dtype=torch.float32, device=device)
+    return torch.as_tensor((t.clone().detach().type(torch.int64) * eps_ratio.clone().detach().type(torch.int64) // D), dtype=torch.float32, device=device)
 
 # re-quantize from a lower precision (larger eps_in) to a higher precision (lower eps_out)
 def pact_integer_requantize_add(*t, eps_in_list, eps_out, D=1):
+    D = D.clone().detach().to(eps_out.device)
     # unrolling the first iteration of the loop instead of using torch.zeros to init y is necessary for correct ONNX export
     eps_in = eps_in_list[0]
     eps_ratio = (D*eps_in/eps_out).round()
@@ -477,7 +479,7 @@ class PACT_IntegerAdd(torch.nn.Module):
         if type(eps_in_list) is list:
             self.eps_in_list = eps_in_list
         # for now, select the biggest eps_out as the target one
-        self.eps_out = max(self.eps_in_list)
+        self.eps_out = max(self.eps_in_list)*len(self.eps_in_list) # the second term avoid overflow
         self.alpha_out = 2.0**(self.precision.get_bits())-1
         # D is selected as a power-of-two
         self.D = 2**torch.as_tensor(torch.ceil(torch.log2(self.requantization_factor * self.eps_out / min(self.eps_in_list))), dtype=torch.int64)
