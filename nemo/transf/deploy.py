@@ -106,9 +106,9 @@ def _set_eps_in_pact(self, eps_in):
             if eps_in_new is None:
                 continue
         if (m.__class__.__name__ == "PACT_Act"):
-            m.eps_in = torch.tensor(eps_in_new[0], requires_grad=False)
+            m.eps_in = eps_in_new[0].clone().detach().requires_grad_(False)
         if (m.__class__.__name__ == "PACT_QuantizedBatchNormNd"):
-            m.eps_in = torch.tensor(eps_in_new[0], requires_grad=False)
+            m.eps_in = eps_in_new[0].clone().detach().requires_grad_(False)
         if (m.__class__.__name__ == "PACT_IntegerAdd"):
             eps_in_list = []
             for eps in eps_in_new:
