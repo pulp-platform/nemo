@@ -138,9 +138,9 @@ class DeployGraph(object):
         else:
             with scope_name_workaround(module):
                 try:
-                    graph, _params_dict, _torch_out = torch.onnx.utils._model_to_graph(module, dummy_input, propagate=True, _retain_param_name=True)
+                    graph, _params_dict, _torch_out = torch.onnx.utils._model_to_graph(module, dummy_input, propagate=True)
                 except TypeError:
-                    graph, _params_dict, _torch_out = torch.onnx.utils._model_to_graph(module, dummy_input, _retain_param_name=True)
+                    graph, _params_dict, _torch_out = torch.onnx.utils._model_to_graph(module, dummy_input)
         input_dict = {}
         output_dict = {}
         self.non_unique_names_dict = {}
